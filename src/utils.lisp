@@ -70,6 +70,28 @@
      ,@body))
 
 
+;;;; Maths
+(defun d (n sides &optional (plus 0))
+  "Roll some dice.
+
+  (d 1 4)     -> roll 1d4
+  (d 2 8)     -> roll 2d8
+  (d 1 10 -1) -> roll 1d10-1
+
+  "
+  (+ (iterate (repeat n)
+              (sum (1+ (random sides))))
+     plus))
+
+(defun clamp (from to n)
+  (let ((max (max from to))
+        (min (min from to)))
+    (cond
+      ((> n max) max)
+      ((< n min) min)
+      (t n))))
+
+
 ;;;; dlambda
 (defmacro dlambda (&rest clauses)
   (with-gensyms (message arguments)

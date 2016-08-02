@@ -3,7 +3,7 @@
     #:cl
     #:iterate
     #:cl-arrows
-    #:sand.quickutils)
+    #:silt.quickutils)
   (:export
     #:zap%
     #:%
@@ -11,6 +11,8 @@
     #:recur
     #:dis
     #:spit
+    #:d
+    #:clamp
 
     #:dlambda
 
@@ -39,8 +41,10 @@
     #:->))
 
 (defpackage #:silt
-  (:use #:cl
-        #:iterate
-        #:cl-arrows
-        #:silt.quickutils
-        #:silt.utils))
+  (:use
+    #:cl
+    #:iterate
+    #:cl-arrows
+    #:silt.quickutils
+    #:silt.utils
+    #:state-machine))

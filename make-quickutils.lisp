@@ -1,13 +1,14 @@
 (ql:quickload 'quickutil)
 
 (qtlc:save-utils-as
-  "quickutils.lisp"
+  "vendor/quickutils.lisp"
   :utilities '(
                :with-gensyms
                :once-only
                :compose
                :curry
                :rcurry
+               :parse-body
                ; :n-grams
                :define-constant
                ; :switch

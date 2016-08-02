@@ -2,7 +2,7 @@
 ;;;; See http://quickutil.org for details.
 
 ;;;; To regenerate:
-;;;; (qtlc:save-utils-as "quickutils.lisp" :utilities '(:WITH-GENSYMS :ONCE-ONLY :COMPOSE :CURRY :RCURRY :DEFINE-CONSTANT) :ensure-package T :package "SILT.QUICKUTILS")
+;;;; (qtlc:save-utils-as "vendor/quickutils.lisp" :utilities '(:WITH-GENSYMS :ONCE-ONLY :COMPOSE :CURRY :RCURRY :PARSE-BODY :DEFINE-CONSTANT) :ensure-package T :package "SILT.QUICKUTILS")
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (unless (find-package "SILT.QUICKUTILS")
@@ -16,7 +16,7 @@
   (setf *utilities* (union *utilities* '(:STRING-DESIGNATOR :WITH-GENSYMS
                                          :MAKE-GENSYM-LIST :ONCE-ONLY
                                          :ENSURE-FUNCTION :COMPOSE :CURRY
-                                         :RCURRY :DEFINE-CONSTANT))))
+                                         :RCURRY :PARSE-BODY :DEFINE-CONSTANT))))
 
   (deftype string-designator ()
     "A string designator type. A string designator is either a string, a symbol,
@@ -183,6 +183,28 @@ with and `arguments` to `function`."
         (multiple-value-call fn (values-list more) (values-list arguments)))))
   
 
+  (defun parse-body (body &key documentation whole)
+    "Parses `body` into `(values remaining-forms declarations doc-string)`.
+Documentation strings are recognized only if `documentation` is true.
+Syntax errors in body are signalled and `whole` is used in the signal
+arguments when given."
+    (let ((doc nil)
+          (decls nil)
+          (current nil))
+      (tagbody
+       :declarations
+         (setf current (car body))
+         (when (and documentation (stringp current) (cdr body))
+           (if doc
+               (error "Too many documentation strings in ~S." (or whole body))
+               (setf doc (pop body)))
+           (go :declarations))
+         (when (and (listp current) (eql (first current) 'declare))
+           (push (pop body) decls)
+           (go :declarations)))
+      (values body (nreverse decls) doc)))
+  
+
   (defun %reevaluate-constant (name value test)
     (if (not (boundp name))
         value
@@ -221,6 +243,6 @@ equal under `test` to result of evaluating `initial-value`."
   
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (export '(with-gensyms with-unique-names once-only compose curry rcurry
-            define-constant)))
+            parse-body define-constant)))
 
-;;;; END OF quickutils.lisp ;;;;
+;;;; END OF vendor/quickutils.lisp ;;;;

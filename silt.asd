@@ -13,7 +13,10 @@
 
   :serial t
   :components
-  ((:file "quickutils") ; quickutils package ordering crap
+  ((:module "vendor"
+    :serial t
+    :components ((:file "quickutils")
+                 (:file "state-machine")))
    (:file "package")
    (:module "src"
     :serial t
