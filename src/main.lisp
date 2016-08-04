@@ -227,8 +227,35 @@
   (render
     (write-left '("Welcome to Silt."
                   ""
-                  "You are the god of a toroidal world.")
-                0 0)))
+                  "You are the god of a toroidal world."
+                  ""
+                  "CONTROLS"
+                  "  hjkl - move your view"
+                  "  HJKL - move your view faster"
+                  ""
+                  "  Q - quit"
+                  "  R - regenerate the world"
+                  ""
+                  "  ? - help"
+                  ""
+                  "Press any key to begin."
+                  )
+                1 1)))
+
+(defun render-help ()
+  (render
+    (write-left '("CONTROLS"
+                  "  hjkl - move your view"
+                  "  HJKL - move your view faster"
+                  ""
+                  "  Q - quit"
+                  "  R - regenerate the world"
+                  ""
+                  "  ? - help"
+                  ""
+                  "Press any key to continue."
+                  )
+                1 1)))
 
 (defun render-generate ()
   (render
@@ -252,11 +279,7 @@
           sx sy)))))
 
 
-(defun handle-input-title ()
-  (charms:disable-non-blocking-mode charms:*standard-window*)
-  (charms:get-char charms:*standard-window*))
-
-(defun handle-input-intro ()
+(defun press-any-key ()
   (charms:disable-non-blocking-mode charms:*standard-window*)
   (charms:get-char charms:*standard-window*))
 
@@ -267,7 +290,7 @@
     (case key
       ((#\Q) (return :quit))
       ((#\R) (return :regen))
-      ((#\x) (/ 1 0))
+      ((#\?) (return :help))
 
       ((#\h) (move-view  -5   0))
       ((#\j) (move-view   0   5))
@@ -292,12 +315,12 @@
 
 (defun state-title ()
   (render-title)
-  (handle-input-title)
+  (press-any-key)
   (state-intro))
 
 (defun state-intro ()
   (render-intro)
-  (handle-input-intro)
+  (press-any-key)
   (state-generate))
 
 (defun state-generate ()
@@ -308,14 +331,19 @@
 (defun state-map ()
   (charms:enable-non-blocking-mode charms:*standard-window*)
   (case (handle-input-map)
-    ((:quit)
-     (state-quit))
-    ((:regen)
-     (state-generate))
+    ((:quit) (state-quit))
+    ((:regen) (state-generate))
+    ((:help) (state-help))
     (t
      (render-map)
      (sleep 0.1)
      (state-map))))
+
+
+(defun state-help ()
+  (render-help)
+  (press-any-key)
+  (state-map))
 
 (defun state-quit ()
   'goodbye)
