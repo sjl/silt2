@@ -27,14 +27,8 @@
 (defun clamp-h (y)
   (clamp 0 (1- *height*) y))
 
-(defun write-centered (string x y)
-  (charms:write-string-at-point
-    charms:*standard-window*
-    string
-    (clamp-w (- x (floor (length string) 2)))
-    (clamp-h y)))
 
-(defun write-left (string x y)
+(defun write-string-at (string x y)
   (charms:write-string-at-point
     charms:*standard-window*
     string
@@ -42,20 +36,40 @@
     (clamp-h y)))
 
 
+(defun write-centered (text x y)
+  (etypecase text
+    (string (write-centered (list text) x y))
+    (list (iterate
+            (for string :in text)
+            (for tx = (- x (floor (length string) 2)))
+            (for ty :from y)
+            (write-string-at string tx ty)))))
+
+(defun write-left (text x y)
+  (etypecase text
+    (string (write-left (list text) x y))
+    (list (iterate
+            (for string :in text)
+            (for tx = x)
+            (for ty :from y)
+            (write-string-at string tx ty)))))
+
+
 (defun render-title ()
   (render
     (let ((cx (floor *width* 2))
           (cy (floor *height* 2)))
-      (write-centered "S I L T" cx cy) 
-      (write-centered "Press any key to start..." cx (1+ cy)) )))
+      (write-centered '("S I L T"
+                        ""
+                        "Press any key to start...")
+                      cx (1- cy)))))
 
 (defun render-intro ()
   (render
-    (charms:move-cursor charms:*standard-window*
-                        (- (floor *width* 2) 3)
-                        (floor *height* 2))
-    (write-left "Welcome to Silt." 0 0)
-    (write-left "You are the god of a toroidal world." 0 1)))
+    (write-left '("Welcome to Silt."
+                  ""
+                  "You are the god of a toroidal world.")
+                0 0)))
 
 
 (defun handle-input-title ()
@@ -67,19 +81,18 @@
   (charms:get-char charms:*standard-window*))
 
 
-(defparameter *game*
-  (state-machine ()
-      ((title ()
-         (render-title)
-         (handle-input-title)
-         (transition intro))
-       (intro ()
-         (render-intro)
-         (handle-input-intro)
-         (transition quit))
-       (quit ()
-         'goodbye))
-    (transition title)))
+(defun state-title ()
+  (render-title)
+  (handle-input-title)
+  (state-intro))
+
+(defun state-intro ()
+  (render-intro)
+  (handle-input-intro)
+  (state-quit))
+
+(defun state-quit ()
+  'goodbye)
 
 
 (defun run ()
@@ -88,6 +101,6 @@
     (charms:disable-echoing)
     (charms:enable-raw-input :interpret-control-characters t)
     ; (charms:enable-non-blocking-mode charms:*standard-window*)
-    (invoke-state-machine *game*)))
+    (state-title)))
 
 ; (run)

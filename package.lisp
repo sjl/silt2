@@ -46,5 +46,4 @@
     #:iterate
     #:cl-arrows
     #:silt.quickutils
-    #:silt.utils
-    #:state-machine))
+    #:silt.utils))

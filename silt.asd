@@ -15,8 +15,7 @@
   :components
   ((:module "vendor"
     :serial t
-    :components ((:file "quickutils")
-                 (:file "state-machine")))
+    :components ((:file "quickutils")))
    (:file "package")
    (:module "src"
     :serial t
