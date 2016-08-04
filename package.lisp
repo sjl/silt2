@@ -46,4 +46,6 @@
     #:iterate
     #:cl-arrows
     #:silt.quickutils
-    #:silt.utils))
+    #:silt.utils)
+  (:export
+    #:main))

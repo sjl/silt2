@@ -27,12 +27,13 @@
 (define-constant +color-snow+ 4)
 (define-constant +color-green+ 5)
 
-(charms/ll:init-pair +color-white+ charms/ll:COLOR_WHITE charms/ll:COLOR_BLACK)
-(charms/ll:init-pair +color-blue+ charms/ll:COLOR_BLUE charms/ll:COLOR_BLACK)
-(charms/ll:init-pair +color-yellow+ charms/ll:COLOR_YELLOW charms/ll:COLOR_BLACK)
-(charms/ll:init-pair +color-cyan+ charms/ll:COLOR_CYAN charms/ll:COLOR_BLACK)
-(charms/ll:init-pair +color-snow+ charms/ll:COLOR_BLACK charms/ll:COLOR_WHITE)
-(charms/ll:init-pair +color-green+ charms/ll:COLOR_GREEN charms/ll:COLOR_BLACK)
+(defun init-colors ()
+  (charms/ll:init-pair +color-white+ charms/ll:COLOR_WHITE charms/ll:COLOR_BLACK)
+  (charms/ll:init-pair +color-blue+ charms/ll:COLOR_BLUE charms/ll:COLOR_BLACK)
+  (charms/ll:init-pair +color-yellow+ charms/ll:COLOR_YELLOW charms/ll:COLOR_BLACK)
+  (charms/ll:init-pair +color-cyan+ charms/ll:COLOR_CYAN charms/ll:COLOR_BLACK)
+  (charms/ll:init-pair +color-snow+ charms/ll:COLOR_BLACK charms/ll:COLOR_WHITE)
+  (charms/ll:init-pair +color-green+ charms/ll:COLOR_GREEN charms/ll:COLOR_BLACK))
 
 (defmacro with-color (color &body body)
   (once-only (color)
@@ -266,6 +267,7 @@
     (case key
       ((#\Q) (return :quit))
       ((#\R) (return :regen))
+      ((#\x) (/ 1 0))
 
       ((#\h) (move-view  -5   0))
       ((#\j) (move-view   0   5))
@@ -327,6 +329,16 @@
     (charms:enable-raw-input :interpret-control-characters t)
     (charms:enable-extra-keys charms:*standard-window*)
     (charms/ll:start-color)
+    (init-colors)
     (state-title)))
+
+(defun main ()
+  (handler-case
+    (progn
+      (run)
+      (format t "Goodbye.~%"))
+    (t (e)
+     (declare (ignore e))
+     (format t "Something went wrong, sorry.~%"))))
 
 ; (run)

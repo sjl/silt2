@@ -1,3 +1,5 @@
 scratch.lisp
 data
-silt
+
+syntax: re
+build/silt$
