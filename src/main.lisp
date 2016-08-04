@@ -10,7 +10,7 @@
 (defparameter *screen-center-x* 1)
 (defparameter *screen-center-y* 1)
 
-(defparameter *world-exponent* 10)
+(defparameter *world-exponent* 9)
 (defparameter *world-size* (expt 2 *world-exponent*))
 
 (defparameter *view-x* 0)
@@ -92,6 +92,27 @@
             (for tx = x)
             (for ty :from y)
             (write-string-at string tx ty)))))
+
+(defun write-right (text x y)
+  (etypecase text
+    (string (write-right (list text) x y))
+    (list (iterate
+            (for string :in text)
+            (for tx = (- x (length string)))
+            (for ty :from y)
+            (write-string-at string tx ty)))))
+
+
+(defun l (s &rest args)
+  (write-centered (apply #'format nil s args)
+                  *screen-center-x* *screen-center-y*))
+
+
+(defclause-sequence ACROSS-FLAT-ARRAY INDEX-OF-FLAT-ARRAY
+  :access-fn 'row-major-aref
+  :size-fn 'array-total-size
+  :sequence-type 'array
+  :element-type t)
 
 
 ;;;; World Generation
@@ -194,24 +215,113 @@
   heightmap)
 
 
-;;;;
+;;;; Miscellaneous
 (defun move-view (dx dy)
-  (incf *view-x* dx)
-  (incf *view-y* dy))
+  (setf *view-x* (wrap (+ *view-x* dx))
+        *view-y* (wrap (+ *view-y* dy))))
 
 (defun wrap (coord)
   (mod coord *world-size*))
 
-(defun terrain-char (x y)
+(defun terrain-type (x y)
   (let ((h (aref *heightmap* (wrap x) (wrap y))))
-    (cond ((< h 0.2)  (values #\~ +color-blue+))
-          ((< h 0.3)  (values #\~ +color-cyan+))
-          ((< h 0.32) (values #\: +color-yellow+))
-          ((< h 0.65) (values #\. +color-green+))
-          ((< h 0.7)  (values #\. +color-white+))
-          ((< h 0.75) (values #\^ +color-white+))
-          ((< h 0.9)  (values #\# +color-white+))
-          (t          (values #\* +color-snow+)))))
+    (cond ((< h 0.2)  :deep-water)
+          ((< h 0.3)  :shallow-water)
+          ((< h 0.32) :sand)
+          ((< h 0.65) :grass)
+          ((< h 0.7)  :dirt)
+          ((< h 0.75) :hills)
+          ((< h 0.9)  :mountain)
+          (t          :snow))))
+
+(defun terrain-char (x y)
+  (case (terrain-type x y)
+    (:deep-water    (values #\~ +color-blue+))
+    (:shallow-water (values #\~ +color-cyan+))
+    (:sand          (values #\: +color-yellow+))
+    (:grass         (values #\. +color-green+))
+    (:dirt          (values #\. +color-white+))
+    (:hills         (values #\^ +color-white+))
+    (:mountain      (values #\# +color-white+))
+    (:snow          (values #\* +color-snow+))))
+
+(defun world-to-screen (wx wy)
+  "Convert world-space coordinates to screen-space."
+  (values (- wx *view-x*)
+          (- wy *view-y*)))
+
+(defun onscreenp (sx sy)
+  "Return whether the given screen-space coords are visible in the viewport."
+  (and (< -1 sx *screen-width*)
+       (< -1 sy *screen-height*)))
+
+
+;;;; ECS
+(init-ecs)
+
+;;; Components
+(defcomponent coords
+  (x y))
+
+(defcomponent visible
+  (glyph color))
+
+
+;;; Entities
+(defun make-tree (x y)
+  (add-entity nil
+    (coords :x x :y y)
+    (visible :glyph #\T :color +color-green+)))
+
+(defun make-algae (x y)
+  (add-entity nil
+    (coords :x x :y y)
+    (visible :glyph #\` :color +color-green+)))
+
+
+;;; Systems
+(defsys draw-visible ((visible coords) (entity))
+  (multiple-value-bind (sx sy)
+      (world-to-screen (coords/x entity) (coords/y entity))
+    (when (onscreenp sx sy)
+      (with-color (visible/color entity)
+        (charms:write-char-at-point
+          charms:*standard-window*
+          (visible/glyph entity)
+          sx sy)))))
+
+(defsys clear-entities (() (entity))
+  (remove-entity entity))
+
+
+;;;; Flora
+(defun tree-probability (x y)
+  (case (terrain-type x y)
+    (:grass 0.01)
+    (:dirt 0.001)
+    (t 0)))
+
+(defun algae-probability (x y)
+  (case (terrain-type x y)
+    (:shallow-water 0.01)
+    (:deep-water 0.001)
+    (t 0)))
+
+(defun grow-trees ()
+  (iterate
+    (for x :from 0 :below *world-size*)
+    (iterate
+      (for y :from 0 :below *world-size*)
+      (when (< (random 1.0) (tree-probability x y))
+        (make-tree x y)))))
+
+(defun grow-algae ()
+  (iterate
+    (for x :from 0 :below *world-size*)
+    (iterate
+      (for y :from 0 :below *world-size*)
+      (when (< (random 1.0) (algae-probability x y))
+        (make-algae x y)))))
 
 
 ;;;; Game State Machine
@@ -262,7 +372,8 @@
     (write-centered "Generating world, please wait..."
                     *screen-center-x* *screen-center-y*)))
 
-(defun render-map ()
+
+(defun draw-terrain ()
   (iterate
     (repeat *screen-width*)
     (for sx :from 0)
@@ -277,6 +388,16 @@
           charms:*standard-window*
           char
           sx sy)))))
+
+(defun draw-ui ()
+  (write-right (format nil "[~D, ~D]" *view-x* *view-y*)
+               (1- *screen-width*) 0))
+
+
+(defun render-map ()
+  (draw-terrain)
+  (do-system 'draw-visible)
+  (draw-ui))
 
 
 (defun press-any-key ()
@@ -325,7 +446,12 @@
 
 (defun state-generate ()
   (render-generate)
-  (setf *heightmap* (diamond-square (allocate-heightmap)))
+  (do-system 'clear-entities)
+  (setf *heightmap* (diamond-square (allocate-heightmap))
+        *view-x* 0
+        *view-y* 0)
+  (grow-trees)
+  (grow-algae)
   (state-map))
 
 (defun state-map ()

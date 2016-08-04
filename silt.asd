@@ -9,7 +9,8 @@
 
   :depends-on (#:iterate
                #:cl-charms
-               #:cl-arrows)
+               #:cl-arrows
+               #:cl-ecs)
 
   :serial t
   :components
