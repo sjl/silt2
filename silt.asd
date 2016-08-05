@@ -10,7 +10,8 @@
   :depends-on (#:iterate
                #:cl-charms
                #:cl-arrows
-               #:sb-sprof)
+               #:sb-sprof
+               #:losh)
 
   :serial t
   :components
@@ -18,7 +19,4 @@
     :serial t
     :components ((:file "quickutils")))
    (:file "package")
-   (:module "src"
-    :serial t
-    :components ((:file "utils")
-                 (:file "main")))))
+   (:file "silt")))
