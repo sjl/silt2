@@ -14,6 +14,8 @@
     #:d
     #:clamp
     #:symbolize
+    #:random-range
+    #:random-around
 
     #:dlambda
 

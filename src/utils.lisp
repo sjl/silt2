@@ -94,6 +94,13 @@
       ((< n min) min)
       (t n))))
 
+(defun random-range (min max)
+  (+ min (random (- max min))))
+
+(defun random-around (val range)
+  (random-range (- val range)
+                (+ val range)))
+
 
 ;;;; dlambda
 (defmacro dlambda (&rest clauses)

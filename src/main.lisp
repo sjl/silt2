@@ -29,6 +29,7 @@
 (define-constant +color-cyan+ 3)
 (define-constant +color-snow+ 4)
 (define-constant +color-green+ 5)
+(define-constant +color-pink+ 6)
 
 (defun init-colors ()
   (charms/ll:init-pair +color-white+ charms/ll:COLOR_WHITE charms/ll:COLOR_BLACK)
@@ -36,7 +37,8 @@
   (charms/ll:init-pair +color-yellow+ charms/ll:COLOR_YELLOW charms/ll:COLOR_BLACK)
   (charms/ll:init-pair +color-cyan+ charms/ll:COLOR_CYAN charms/ll:COLOR_BLACK)
   (charms/ll:init-pair +color-snow+ charms/ll:COLOR_BLACK charms/ll:COLOR_WHITE)
-  (charms/ll:init-pair +color-green+ charms/ll:COLOR_GREEN charms/ll:COLOR_BLACK))
+  (charms/ll:init-pair +color-green+ charms/ll:COLOR_GREEN charms/ll:COLOR_BLACK)
+  (charms/ll:init-pair +color-pink+ charms/ll:COLOR_MAGENTA charms/ll:COLOR_BLACK))
 
 (defmacro with-color (color &body body)
   (once-only (color)
@@ -254,8 +256,8 @@
 
 (defun world-to-screen (wx wy)
   "Convert world-space coordinates to screen-space."
-  (values (- wx *view-x*)
-          (- wy *view-y*)))
+  (values (wrap (- wx *view-x*))
+          (wrap (- wy *view-y*))))
 
 (defun onscreenp (sx sy)
   "Return whether the given screen-space coords are visible in the viewport."
@@ -273,6 +275,9 @@
 ;;; Systems are stored as:
 ;;;
 ;;;     {system-symbol -> (cons system-function type-specifier-list)}
+;;;
+;;; TODO: Figure out the distinct problem.
+
 (defvar *entity-id-counter* 0)
 (defvar *entity-index* (make-hash-table))
 (defvar *component-index* (make-hash-table))
@@ -284,7 +289,7 @@
   (mapc #'clrhash (hash-table-values *component-index*)))
 
 (defun get-entity (id)
-  (gethash *entity-index* id))
+  (gethash id *entity-index*))
 
 
 (defclass entity ()
@@ -360,24 +365,40 @@
 
 ;;;; ECS
 ;;; Components
-(define-component coords x y)
+(define-component coords
+  x y)
 
 (define-component visible
   (glyph :type char)
   color)
 
+(define-component edible
+  energy)
+
+(define-component fruiting
+  chance)
+
 
 ;;; Entities
-(define-entity tree (coords visible))
-(define-entity algae (coords visible))
-
+(define-entity fruit (coords visible edible))
+(define-entity tree (coords visible fruiting))
+(define-entity algae (coords visible edible))
 
 (defun make-tree (x y)
   (make-instance 'tree
                  :coords/x x
                  :coords/y y
                  :visible/glyph #\T
-                 :visible/color +color-green+))
+                 :visible/color +color-green+
+                 :fruiting/chance 0.001))
+
+(defun make-fruit (x y)
+  (make-instance 'fruit
+                 :coords/x x
+                 :coords/y y
+                 :visible/glyph #\o
+                 :visible/color +color-pink+
+                 :edible/energy (random-around 10 3)))
 
 (defun make-algae (x y)
   (make-instance 'algae
@@ -397,6 +418,11 @@
           charms:*standard-window*
           (visible/glyph entity)
           sx sy)))))
+
+(define-system grow-fruit ((entity fruiting coords))
+  (when (< (random 1.0) (fruiting/chance entity))
+    (make-fruit (random-around (coords/x entity) 2)
+                (random-around (coords/y entity) 2))))
 
 
 ;;;; Flora
@@ -501,7 +527,9 @@
           sx sy)))))
 
 (defun draw-ui ()
-  (write-right (format nil "[~D, ~D]" *view-x* *view-y*)
+  (write-right (list
+                 (format nil "[~D, ~D]" *view-x* *view-y*)
+                 (format nil "~D entities" (hash-table-count *entity-index*)))
                (1- *screen-width*) 0))
 
 
@@ -556,6 +584,10 @@
       (t (push key *debug*) t))))
 
 
+(defun tick-world ()
+  (run-system 'grow-fruit))
+
+
 (defun state-title ()
   (render-title)
   (press-any-key)
@@ -585,6 +617,7 @@
     ((:regen) (state-generate))
     ((:help) (state-help))
     (t
+     (tick-world)
      (render-map)
      (sleep 0.1)
      (state-map))))
