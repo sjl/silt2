@@ -527,6 +527,36 @@
         (make-algae x y)))))
 
 
+
+;;;; Profiling
+(require :sb-sprof)
+(sb-sprof::profile-call-counts "SILT")
+(defvar *profiling* nil)
+
+(defun dump-profile ()
+  (with-open-file (*standard-output* "silt.prof"
+                                     :direction :output
+                                     :if-exists :supersede)
+    (sb-sprof:report :type :graph
+                     :sort-by :cumulative-samples
+                     :sort-order :ascending)
+    (sb-sprof:report :type :flat
+                     :min-percent 0.5)))
+
+(defun start-profiling ()
+  (sb-sprof::reset)
+  (sb-sprof::start-profiling :max-samples 50000
+                             :mode :cpu
+                             :sample-interval 0.005
+                             :threads :all)
+  (setf *profiling* t))
+
+(defun stop-profiling ()
+  (setf *profiling* nil)
+  (sb-sprof::stop-profiling)
+  (dump-profile))
+
+
 ;;;; Game State Machine
 (defun render-title ()
   (render
@@ -742,3 +772,5 @@
      (format t "Something went wrong, sorry.~%"))))
 
 ; (run)
+; (start-profiling)
+; (stop-profiling)
