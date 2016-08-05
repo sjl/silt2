@@ -16,6 +16,9 @@
 (defparameter *view-x* 0)
 (defparameter *view-y* 0)
 
+(defparameter *cursor-x* 0)
+(defparameter *cursor-y* 0)
+
 (defvar *heightmap* nil)
 
 
@@ -50,8 +53,6 @@
     (setf *screen-width* w *screen-height* h
           *screen-center-x* (floor w 2)
           *screen-center-y* (floor h 2))))
-
-
 
 (defmacro render (&body body)
   `(prog2
@@ -221,6 +222,10 @@
   (setf *view-x* (wrap (+ *view-x* dx))
         *view-y* (wrap (+ *view-y* dy))))
 
+(defun move-cursor (dx dy)
+  (setf *cursor-x* (clamp-w (+ *cursor-x* dx))
+        *cursor-y* (clamp-h (+ *cursor-y* dy))))
+
 (defun wrap (coord)
   (mod coord *world-size*))
 
@@ -363,7 +368,7 @@
 
 ;;; Entities
 (define-entity tree (coords visible))
-(define-entity algae (coords visible edible))
+(define-entity algae (coords visible))
 
 
 (defun make-tree (x y)
@@ -377,7 +382,6 @@
   (make-instance 'algae
                  :coords/x x
                  :coords/y y
-                 :edible/energy 10
                  :visible/glyph #\`
                  :visible/color +color-green+))
 
@@ -440,8 +444,11 @@
                   "You are the god of a toroidal world."
                   ""
                   "CONTROLS"
-                  "  hjkl - move your view"
-                  "  HJKL - move your view faster"
+                  "  hjklyubn - move your view"
+                  "  HJKLYUBN - move your view faster"
+                  ""
+                  "  wasd - move your cursor"
+                  "  WASD - move your cursor faster"
                   ""
                   "  Q - quit"
                   "  R - regenerate the world"
@@ -455,8 +462,11 @@
 (defun render-help ()
   (render
     (write-left '("CONTROLS"
-                  "  hjkl - move your view"
-                  "  HJKL - move your view faster"
+                  "  hjklyubn - move your view"
+                  "  HJKLYUBN - move your view faster"
+                  ""
+                  "  wasd - move your cursor"
+                  "  WASD - move your cursor faster"
                   ""
                   "  Q - quit"
                   "  R - regenerate the world"
@@ -497,7 +507,8 @@
 (defun render-map ()
   (draw-terrain)
   (run-system 'draw-visible)
-  (draw-ui))
+  (draw-ui)
+  (charms:move-cursor charms:*standard-window* *cursor-x* *cursor-y*))
 
 
 (defun press-any-key ()
@@ -531,6 +542,15 @@
       ((#\B) (move-view -30  30))
       ((#\N) (move-view  30  30))
 
+      ((#\w) (move-cursor  0 -1))
+      ((#\a) (move-cursor -1  0))
+      ((#\s) (move-cursor  0  1))
+      ((#\d) (move-cursor  1  0))
+      ((#\W) (move-cursor   0 -10))
+      ((#\A) (move-cursor -10   0))
+      ((#\S) (move-cursor   0  10))
+      ((#\D) (move-cursor  10   0))
+
       (t (push key *debug*) t))))
 
 
@@ -549,7 +569,9 @@
   (clear-entities)
   (setf *heightmap* (diamond-square (allocate-heightmap))
         *view-x* 0
-        *view-y* 0)
+        *view-y* 0
+        *cursor-x* 0
+        *cursor-y* 0)
   (grow-trees)
   (grow-algae)
   (state-map))
