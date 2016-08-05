@@ -20,13 +20,19 @@
 (defparameter *cursor-x* 0)
 (defparameter *cursor-y* 0)
 
-(defvar *heightmap* (allocate-heightmap))
-
 (deftype world-coordinate ()
   `(integer 0 ,(1- +world-size+)))
 
 (deftype world-array ()
   `(simple-array single-float (,+world-size+ ,+world-size+)))
+
+(defun allocate-heightmap ()
+  (make-array (list +world-size+ +world-size+)
+    :element-type 'single-float
+    :initial-element 0.0
+    :adjustable nil))
+
+(defvar *heightmap* (allocate-heightmap))
 
 (declaim (type world-array *heightmap*))
 
@@ -138,11 +144,6 @@
   (/ (apply #'+ values) (length values)))
 
 
-(defun allocate-heightmap ()
-  (make-array (list +world-size+ +world-size+)
-    :element-type 'single-float
-    :initial-element 0.0
-    :adjustable nil))
 
 
 (defun hm-size (heightmap)
