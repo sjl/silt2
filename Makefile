@@ -12,5 +12,5 @@ build/silt: $(lisps)
 	cp build/silt /opt/silt/silt
 
 deploy:
-	rsync --exclude=build/silt --exclude=.hg -avz . silt:/home/sjl/silt2
+	rsync --exclude=build/silt --exclude=.hg --exclude=silt.prof -avz . silt:/home/sjl/silt2
 	ssh silt make -C /home/sjl/silt2 /opt/silt/silt
