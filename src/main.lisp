@@ -369,7 +369,7 @@
   x y)
 
 (define-component visible
-  (glyph :type char)
+  (glyph :type string)
   color)
 
 (define-component edible
@@ -388,7 +388,7 @@
   (make-instance 'tree
                  :coords/x x
                  :coords/y y
-                 :visible/glyph #\T
+                 :visible/glyph "T"
                  :visible/color +color-green+
                  :fruiting/chance 0.001))
 
@@ -396,7 +396,7 @@
   (make-instance 'fruit
                  :coords/x x
                  :coords/y y
-                 :visible/glyph #\o
+                 :visible/glyph "ó"
                  :visible/color +color-pink+
                  :edible/energy (random-around 10 3)))
 
@@ -404,7 +404,7 @@
   (make-instance 'algae
                  :coords/x x
                  :coords/y y
-                 :visible/glyph #\`
+                 :visible/glyph "`"
                  :visible/color +color-green+))
 
 
@@ -414,7 +414,7 @@
       (world-to-screen (coords/x entity) (coords/y entity))
     (when (onscreenp sx sy)
       (with-color (visible/color entity)
-        (charms:write-char-at-point
+        (charms:write-string-at-point
           charms:*standard-window*
           (visible/glyph entity)
           sx sy)))))
@@ -527,10 +527,12 @@
           sx sy)))))
 
 (defun draw-ui ()
-  (write-right (list
-                 (format nil "[~D, ~D]" *view-x* *view-y*)
-                 (format nil "~D entities" (hash-table-count *entity-index*)))
-               (1- *screen-width*) 0))
+  (write-right
+    (list
+      (format nil "[~D, ~D]" *view-x* *view-y*)
+      (format nil "~D entities" (hash-table-count *entity-index*)))
+    (1- *screen-width*)
+    0))
 
 
 (defun render-map ()
