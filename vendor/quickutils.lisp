@@ -2,7 +2,7 @@
 ;;;; See http://quickutil.org for details.
 
 ;;;; To regenerate:
-;;;; (qtlc:save-utils-as "vendor/quickutils.lisp" :utilities '(:WITH-GENSYMS :ONCE-ONLY :COMPOSE :CURRY :RCURRY :PARSE-BODY :DEFINE-CONSTANT) :ensure-package T :package "SILT.QUICKUTILS")
+;;;; (qtlc:save-utils-as "vendor/quickutils.lisp" :utilities '(:WITH-GENSYMS :ONCE-ONLY :COMPOSE :CURRY :RCURRY :PARSE-BODY :DEFINE-CONSTANT :HASH-TABLE-KEY-EXISTS-P :HASH-TABLE-KEYS :HASH-TABLE-VALUES :MAP-PRODUCT) :ensure-package T :package "SILT.QUICKUTILS")
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (unless (find-package "SILT.QUICKUTILS")
@@ -16,7 +16,11 @@
   (setf *utilities* (union *utilities* '(:STRING-DESIGNATOR :WITH-GENSYMS
                                          :MAKE-GENSYM-LIST :ONCE-ONLY
                                          :ENSURE-FUNCTION :COMPOSE :CURRY
-                                         :RCURRY :PARSE-BODY :DEFINE-CONSTANT))))
+                                         :RCURRY :PARSE-BODY :DEFINE-CONSTANT
+                                         :HASH-TABLE-KEY-EXISTS-P :MAPHASH-KEYS
+                                         :HASH-TABLE-KEYS :MAPHASH-VALUES
+                                         :HASH-TABLE-VALUES :MAPPEND
+                                         :MAP-PRODUCT))))
 
   (deftype string-designator ()
     "A string designator type. A string designator is either a string, a symbol,
@@ -241,8 +245,78 @@ equal under `test` to result of evaluating `initial-value`."
     `(defconstant ,name (%reevaluate-constant ',name ,initial-value ,test)
        ,@(when documentation `(,documentation))))
   
+
+  (defun hash-table-key-exists-p (hash-table key)
+    "Does `key` exist in `hash-table`?"
+    (nth-value 1 (gethash key hash-table)))
+  
+
+  (declaim (inline maphash-keys))
+  (defun maphash-keys (function table)
+    "Like `maphash`, but calls `function` with each key in the hash table `table`."
+    (maphash (lambda (k v)
+               (declare (ignore v))
+               (funcall function k))
+             table))
+  
+
+  (defun hash-table-keys (table)
+    "Returns a list containing the keys of hash table `table`."
+    (let ((keys nil))
+      (maphash-keys (lambda (k)
+                      (push k keys))
+                    table)
+      keys))
+  
+
+  (declaim (inline maphash-values))
+  (defun maphash-values (function table)
+    "Like `maphash`, but calls `function` with each value in the hash table `table`."
+    (maphash (lambda (k v)
+               (declare (ignore k))
+               (funcall function v))
+             table))
+  
+
+  (defun hash-table-values (table)
+    "Returns a list containing the values of hash table `table`."
+    (let ((values nil))
+      (maphash-values (lambda (v)
+                        (push v values))
+                      table)
+      values))
+  
+
+  (defun mappend (function &rest lists)
+    "Applies `function` to respective element(s) of each `list`, appending all the
+all the result list to a single list. `function` must return a list."
+    (loop for results in (apply #'mapcar function lists)
+          append results))
+  
+
+  (defun map-product (function list &rest more-lists)
+    "Returns a list containing the results of calling `function` with one argument
+from `list`, and one from each of `more-lists` for each combination of arguments.
+In other words, returns the product of `list` and `more-lists` using `function`.
+
+Example:
+
+    (map-product 'list '(1 2) '(3 4) '(5 6))
+     => ((1 3 5) (1 3 6) (1 4 5) (1 4 6)
+         (2 3 5) (2 3 6) (2 4 5) (2 4 6))"
+    (labels ((%map-product (f lists)
+               (let ((more (cdr lists))
+                     (one (car lists)))
+                 (if (not more)
+                     (mapcar f one)
+                     (mappend (lambda (x)
+                                (%map-product (curry f x) more))
+                              one)))))
+      (%map-product (ensure-function function) (cons list more-lists))))
+  
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (export '(with-gensyms with-unique-names once-only compose curry rcurry
-            parse-body define-constant)))
+            parse-body define-constant hash-table-key-exists-p hash-table-keys
+            hash-table-values map-product)))
 
 ;;;; END OF vendor/quickutils.lisp ;;;;
