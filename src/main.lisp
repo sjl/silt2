@@ -40,9 +40,10 @@
 
 (defmacro with-color (color &body body)
   (once-only (color)
-    `(prog2
-      (charms/ll:attron (charms/ll:color-pair ,color))
-      (progn ,@body)
+    `(unwind-protect
+      (prog2
+        (charms/ll:attron (charms/ll:color-pair ,color))
+        (progn ,@body))
       (charms/ll:attroff (charms/ll:color-pair ,color)))))
 
 
