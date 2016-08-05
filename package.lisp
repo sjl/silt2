@@ -13,6 +13,7 @@
     #:spit
     #:d
     #:clamp
+    #:symbolize
 
     #:dlambda
 

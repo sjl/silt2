@@ -69,6 +69,9 @@
                                       :if-exists :supersede)
      ,@body))
 
+(defun symbolize (&rest args)
+  (intern (format nil "~{~A~}" args)))
+
 
 ;;;; Maths
 (defun d (n sides &optional (plus 0))

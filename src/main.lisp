@@ -52,8 +52,6 @@
           *screen-center-y* (floor h 2))))
 
 
-(defun symbolize (&rest args)
-  (intern (format nil "~{~A~}" args)))
 
 (defmacro render (&body body)
   `(prog2
