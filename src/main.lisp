@@ -1,4 +1,5 @@
 (in-package #:silt)
+(require :sb-sprof)
 
 ;;;; Data
 (defparameter *running* nil)
@@ -10,8 +11,8 @@
 (defparameter *screen-center-x* 1)
 (defparameter *screen-center-y* 1)
 
-(defparameter *world-exponent* 9)
-(defparameter *world-size* (expt 2 *world-exponent*))
+(define-constant +world-exponent+ 9)
+(define-constant +world-size+ (expt 2 +world-exponent+))
 
 (defparameter *view-x* 0)
 (defparameter *view-y* 0)
@@ -19,7 +20,15 @@
 (defparameter *cursor-x* 0)
 (defparameter *cursor-y* 0)
 
-(defvar *heightmap* nil)
+(defvar *heightmap* (allocate-heightmap))
+
+(deftype world-coordinate ()
+  `(integer 0 ,(1- +world-size+)))
+
+(deftype world-array ()
+  `(simple-array single-float (,+world-size+ ,+world-size+)))
+
+(declaim (type world-array *heightmap*))
 
 
 ;;;; Colors
@@ -50,13 +59,6 @@
 
 
 ;;;; Utils
-(deftype world-coordinate ()
-  `(integer 0 ,(1- array-dimension-limit)))
-
-(deftype world-array ()
-  `(simple-array single-float (* *)))
-
-
 (defun manage-screen ()
   (multiple-value-bind (w h)
       (charms:window-dimensions charms:*standard-window*)
@@ -137,7 +139,7 @@
 
 
 (defun allocate-heightmap ()
-  (make-array (list *world-size* *world-size*)
+  (make-array (list +world-size+ +world-size+)
     :element-type 'single-float
     :initial-element 0.0
     :adjustable nil))
@@ -228,6 +230,13 @@
 
 
 ;;;; Miscellaneous
+(declaim (inline wrap)
+         (ftype (function (fixnum) world-coordinate) wrap)
+         (ftype (function (fixnum fixnum)) terrain-type terrain-char))
+
+(defun wrap (coord)
+  (mod coord +world-size+))
+
 (defun move-view (dx dy)
   (setf *view-x* (wrap (+ *view-x* dx))
         *view-y* (wrap (+ *view-y* dy))))
@@ -236,12 +245,10 @@
   (setf *cursor-x* (clamp-w (+ *cursor-x* dx))
         *cursor-y* (clamp-h (+ *cursor-y* dy))))
 
-(defun wrap (coord)
-  (mod coord *world-size*))
 
 (defun terrain-type (x y)
   (let ((h (aref *heightmap* (wrap x) (wrap y))))
-    (cond ((< h 0.23)  :deep-water)
+    (cond ((< h 0.23) :deep-water)
           ((< h 0.3)  :shallow-water)
           ((< h 0.34) :sand)
           ((< h 0.65) :grass)
@@ -284,6 +291,13 @@
 ;;;
 ;;;     {component-symbol -> {id -> entity}}
 ;;;
+;;; Entities are indexed by system too:
+;;;
+;;;     {system-symbol -> 
+;;;         ({id -> entity}   ; arg1
+;;;          {id -> entity})  ; arg2
+;;;     }
+;;;
 ;;; Systems are stored as:
 ;;;
 ;;;     {system-symbol -> (cons system-function type-specifier-list)}
@@ -293,17 +307,32 @@
 (defvar *entity-id-counter* 0)
 (defvar *entity-index* (make-hash-table))
 (defvar *component-index* (make-hash-table))
+(defvar *systems* (make-hash-table))
 (defvar *system-index* (make-hash-table))
 
 
 (defun clear-entities ()
-  (let ((ents (hash-table-values *entity-index*)))
-    (clrhash *entity-index*)
-    (mapc #'clrhash (hash-table-values *component-index*))
-    (mapc #'entity-destroyed ents)))
+  (mapc #'destroy-entity (hash-table-values *entity-index*)))
 
 (defun get-entity (id)
   (gethash id *entity-index*))
+
+
+(defun index-entity (e)
+  (setf (gethash (entity-id e) *entity-index*) e))
+
+(defun satisfies-system-type-specifier-p (entity specifier)
+  (every (lambda (component) (typep entity component))
+         specifier))
+
+(defun index-entity-systems (e)
+  (iterate
+    (for (system (function . type-specifiers)) :in-hashtable *systems*)
+    (iterate
+      (for argument-index :in (gethash system *system-index*))
+      (for specifier :in type-specifiers)
+      (when (satisfies-system-type-specifier-p e specifier)
+        (setf (gethash (entity-id e) argument-index) e)))))
 
 
 (defclass entity ()
@@ -314,7 +343,8 @@
     (format stream "~D" (entity-id e))))
 
 (defmethod initialize-instance :after ((e entity) &key)
-  (setf (gethash (entity-id e) *entity-index*) e))
+  (index-entity e)
+  (index-entity-systems e))
 
 
 (defgeneric entity-created (entity)
@@ -334,7 +364,11 @@
     (remhash id *entity-index*)
     (iterate
       (for (nil index) :in-hashtable *component-index*)
-      (remhash id index)))
+      (remhash id index))
+    (iterate
+      (for (nil argument-indexes) :in-hashtable *system-index*)
+      (iterate (for index :in argument-indexes)
+               (remhash id index))))
   (entity-destroyed entity)
   nil)
 
@@ -374,8 +408,9 @@
       (find-class ',name))))
 
 
+
 (defmacro define-system (name arglist &body body)
-  `(prog1
+  `(progn
     (declaim (ftype (function
                       (,@(mapcar (lambda (arg)
                                    `(and entity ,@(cdr arg)))
@@ -385,22 +420,20 @@
     (defun ,name (,@(mapcar #'car arglist))
       ,@body
       nil)
-    (setf (gethash ',name *system-index*) (cons #',name ',(mapcar #'cdr arglist)))))
+    (setf (gethash ',name *systems*)
+          (cons #',name ',(mapcar #'cdr arglist))
+          (gethash ',name *system-index*)
+          (list ,@(iterate (repeat (length arglist))
+                           (collect `(make-hash-table)))))
+    ',name))
 
 (defun run-system (system)
-  (flet ((retrieve-entities (specifier)
-           (if (null specifier)
-             (hash-table-values *entity-index*)
-             (apply #'intersection
-                    (mapcar (lambda (component)
-                              (hash-table-values
-                                (gethash component *component-index*)))
-                            specifier)))))
-    (destructuring-bind (system-function . type-specifiers)
-        (gethash system *system-index*)
-      (apply #'map-product system-function
-             (mapcar #'retrieve-entities type-specifiers))
-      (values))))
+  (destructuring-bind (system-function . type-specifiers)
+      (gethash system *systems*)
+    (declare (ignore type-specifiers))
+    (apply #'map-product system-function
+           (mapcar #'hash-table-values (gethash system *system-index*)))
+    (values)))
 
 
 ;;;; Coordinates
@@ -512,24 +545,23 @@
 
 (defun grow-trees ()
   (iterate
-    (for x :from 0 :below *world-size*)
+    (for x :from 0 :below +world-size+)
     (iterate
-      (for y :from 0 :below *world-size*)
+      (for y :from 0 :below +world-size+)
       (when (< (random 1.0) (tree-probability x y))
         (make-tree x y)))))
 
 (defun grow-algae ()
   (iterate
-    (for x :from 0 :below *world-size*)
+    (for x :from 0 :below +world-size+)
     (iterate
-      (for y :from 0 :below *world-size*)
+      (for y :from 0 :below +world-size+)
       (when (< (random 1.0) (algae-probability x y))
         (make-algae x y)))))
 
 
 
 ;;;; Profiling
-(require :sb-sprof)
 (sb-sprof::profile-call-counts "SILT")
 (defvar *profiling* nil)
 
@@ -622,13 +654,13 @@
       (for sy :from 0)
       (for wy :from *view-y*)
       (for (values terrain-char terrain-color) = (terrain-char wx wy))
-      (for contents = (remove-if-not (lambda (e) (typep e 'visible))
-                                     (coords-lookup wx wy)))
-      (if contents
-        (with-color (visible/color (car contents))
+      (for entity = (car (member-if (lambda (e) (typep e 'visible))
+                                    (coords-lookup wx wy))))
+      (if entity
+        (with-color (visible/color entity)
           (charms:write-string-at-point
             charms:*standard-window*
-            (visible/glyph (car contents))
+            (visible/glyph entity)
             sx sy))
         (with-color terrain-color
           (charms:write-char-at-point
@@ -771,6 +803,8 @@
      (declare (ignore e))
      (format t "Something went wrong, sorry.~%"))))
 
+
+;;;; Scratch
 ; (run)
 ; (start-profiling)
 ; (stop-profiling)
