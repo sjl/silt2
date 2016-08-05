@@ -506,6 +506,7 @@
 
 
 (defun render-map ()
+  (manage-screen)
   (draw-terrain)
   (run-system 'draw-visible)
   (draw-ui)
