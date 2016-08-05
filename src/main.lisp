@@ -50,10 +50,17 @@
 
 
 ;;;; Utils
+(deftype world-coordinate ()
+  `(integer 0 ,(1- array-dimension-limit)))
+
+(deftype world-array ()
+  `(simple-array single-float (* *)))
+
+
 (defun manage-screen ()
   (multiple-value-bind (w h)
       (charms:window-dimensions charms:*standard-window*)
-    (setf *screen-width* w *screen-height* h
+    (setf *screen-width* (1- w) *screen-height* (1- h)
           *screen-center-x* (floor w 2)
           *screen-center-y* (floor h 2))))
 
@@ -259,6 +266,11 @@
   (values (wrap (- wx *view-x*))
           (wrap (- wy *view-y*))))
 
+(defun screen-to-world (sx sy)
+  "Convert screen-space coordinates to world-space."
+  (values (wrap (+ sx *view-x*))
+          (wrap (+ sy *view-y*))))
+
 (defun onscreenp (sx sy)
   "Return whether the given screen-space coords are visible in the viewport."
   (and (< -1 sx *screen-width*)
@@ -285,8 +297,10 @@
 
 
 (defun clear-entities ()
-  (clrhash *entity-index*)
-  (mapc #'clrhash (hash-table-values *component-index*)))
+  (let ((ents (hash-table-values *entity-index*)))
+    (clrhash *entity-index*)
+    (mapc #'clrhash (hash-table-values *component-index*))
+    (mapc #'entity-destroyed ents)))
 
 (defun get-entity (id)
   (gethash id *entity-index*))
@@ -295,8 +309,34 @@
 (defclass entity ()
   ((id :reader entity-id :initform (incf *entity-id-counter*))))
 
+(defmethod print-object ((e entity) stream)
+  (print-unreadable-object (e stream :type t :identity nil)
+    (format stream "~D" (entity-id e))))
+
 (defmethod initialize-instance :after ((e entity) &key)
   (setf (gethash (entity-id e) *entity-index*) e))
+
+
+(defgeneric entity-created (entity)
+  (:method ((entity entity)) nil))
+
+(defgeneric entity-destroyed (entity)
+  (:method ((entity entity)) nil))
+
+
+(defun create-entity (class &rest initargs)
+  (let ((entity (apply #'make-instance class initargs)))
+    (entity-created entity)
+    entity))
+
+(defun destroy-entity (entity)
+  (let ((id (entity-id entity)))
+    (remhash id *entity-index*)
+    (iterate
+      (for (nil index) :in-hashtable *component-index*)
+      (remhash id index)))
+  (entity-destroyed entity)
+  nil)
 
 
 (defmacro define-entity (name components &rest slots)
@@ -363,11 +403,50 @@
       (values))))
 
 
-;;;; ECS
-;;; Components
-(define-component coords
-  x y)
+;;;; Coordinates
+(define-component coords x y)
 
+
+(defparameter *coords-contents* (make-hash-table))
+
+
+(defun coordinate-key (x y)
+  (array-row-major-index *heightmap* (wrap x) (wrap y)))
+
+(defun coordinate-key-for-entity (e)
+  (coordinate-key (coords/x e) (coords/y e)))
+
+
+(defun coords-insert-entity (e)
+  (push e (gethash (coordinate-key-for-entity e) *coords-contents*)))
+
+(defun coords-remove-entity (e)
+  (let ((k (coordinate-key-for-entity e)))
+    (when (null (zap% (gethash k *coords-contents*)
+                      #'delete e %))
+      (remhash k *coords-contents*))))
+
+(defun coords-move-entity (e new-x new-y)
+  (coords-remove-entity e)
+  (setf (coords/x e) new-x
+        (coords/y e) new-y)
+  (coords-insert-entity e))
+
+(defun coords-lookup (x y)
+  (gethash (coordinate-key x y) *coords-contents*))
+
+
+(defmethod entity-created :after ((entity coords))
+  (coords-insert-entity entity))
+
+(defmethod entity-destroyed :after ((entity coords))
+  (coords-remove-entity entity))
+
+
+;;;; Flavor Text
+(define-component flavor text)
+
+;;; Components
 (define-component visible
   (glyph :type string)
   color)
@@ -380,28 +459,30 @@
 
 
 ;;; Entities
-(define-entity fruit (coords visible edible))
-(define-entity tree (coords visible fruiting))
+(define-entity fruit (coords visible edible flavor))
+(define-entity tree (coords visible fruiting flavor))
 (define-entity algae (coords visible edible))
 
 (defun make-tree (x y)
-  (make-instance 'tree
+  (create-entity 'tree
                  :coords/x x
                  :coords/y y
                  :visible/glyph "T"
                  :visible/color +color-green+
-                 :fruiting/chance 0.001))
+                 :fruiting/chance 0.0001
+                 :flavor/text "A tree sways gently in the wind."))
 
 (defun make-fruit (x y)
-  (make-instance 'fruit
+  (create-entity 'fruit
                  :coords/x x
                  :coords/y y
                  :visible/glyph "ó"
                  :visible/color +color-pink+
-                 :edible/energy (random-around 10 3)))
+                 :edible/energy (random-around 10 3)
+                 :flavor/text "A ripe piece of fruit has fallen to the ground."))
 
 (defun make-algae (x y)
-  (make-instance 'algae
+  (create-entity 'algae
                  :coords/x x
                  :coords/y y
                  :visible/glyph "`"
@@ -409,20 +490,11 @@
 
 
 ;;; Systems
-(define-system draw-visible ((entity visible coords))
-  (multiple-value-bind (sx sy)
-      (world-to-screen (coords/x entity) (coords/y entity))
-    (when (onscreenp sx sy)
-      (with-color (visible/color entity)
-        (charms:write-string-at-point
-          charms:*standard-window*
-          (visible/glyph entity)
-          sx sy)))))
 
 (define-system grow-fruit ((entity fruiting coords))
   (when (< (random 1.0) (fruiting/chance entity))
-    (make-fruit (random-around (coords/x entity) 2)
-                (random-around (coords/y entity) 2))))
+    (make-fruit (wrap (random-around (coords/x entity) 2))
+                (wrap (random-around (coords/y entity) 2)))))
 
 
 ;;;; Flora
@@ -519,26 +591,41 @@
       (repeat *screen-height*)
       (for sy :from 0)
       (for wy :from *view-y*)
-      (for (values char color) = (terrain-char wx wy))
-      (with-color color
-        (charms:write-char-at-point
-          charms:*standard-window*
-          char
-          sx sy)))))
+      (for (values terrain-char terrain-color) = (terrain-char wx wy))
+      (for contents = (remove-if-not (lambda (e) (typep e 'visible))
+                                     (coords-lookup wx wy)))
+      (if contents
+        (with-color (visible/color (car contents))
+          (charms:write-string-at-point
+            charms:*standard-window*
+            (visible/glyph (car contents))
+            sx sy))
+        (with-color terrain-color
+          (charms:write-char-at-point
+            charms:*standard-window*
+            terrain-char
+            sx sy))))))
 
 (defun draw-ui ()
   (write-right
     (list
       (format nil "[~D, ~D]" *view-x* *view-y*)
+      (format nil "[~D, ~D]" *cursor-x* *cursor-y*)
       (format nil "~D entities" (hash-table-count *entity-index*)))
     (1- *screen-width*)
-    0))
+    0)
+  (write-left
+    (iterate
+      (for entity :in (multiple-value-call #'coords-lookup
+                        (screen-to-world *cursor-x* *cursor-y*)))
+      (when (typep entity 'flavor)
+        (collect (flavor/text entity))))
+    0 0))
 
 
 (defun render-map ()
   (manage-screen)
   (draw-terrain)
-  (run-system 'draw-visible)
   (draw-ui)
   (charms:move-cursor charms:*standard-window* *cursor-x* *cursor-y*))
 
@@ -621,7 +708,7 @@
     (t
      (tick-world)
      (render-map)
-     (sleep 0.1)
+     (sleep 0.02)
      (state-map))))
 
 
