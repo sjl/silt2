@@ -286,6 +286,17 @@
   heightmap)
 
 
+;;;; Name Generation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defparameter *name-syllable-lists*
+  '(#(snarf glor snorri)
+    #(able amble bur blur chand)))
+
+(defun random-name ()
+  (format nil "~:(~{~A~}~)"
+          (mapcar (lambda (syllables) (random-elt syllables))
+                  *name-syllable-lists*)))
+
+
 ;;;; Roll-Your-Own-ECS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Entities are stored in an {id -> entity} hash table.
 ;;;
@@ -617,7 +628,8 @@
 
 
 ;;; Fauna
-(define-entity creature (coords visible sentient flavor metabolizing))
+(define-entity creature (coords visible sentient flavor metabolizing)
+  (name :initform (random-name) :accessor creature-name))
 
 
 (defparameter *directions*
@@ -670,6 +682,9 @@
                  :flavor/text '("A creature is here."
                                 "It likes food.")))
 
+
+(defmethod starve :after ((c creature))
+  (log-message "~A has starved!" (creature-name c)))
 
 
 ;;;; Profiling ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
