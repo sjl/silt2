@@ -1,7 +1,7 @@
 (in-package #:silt)
 (require :sb-sprof)
 
-;;;; Data
+;;;; Data ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defparameter *running* nil)
 (defparameter *running* t)
 (defparameter *debug* nil)
@@ -20,6 +20,8 @@
 (defparameter *cursor-x* 0)
 (defparameter *cursor-y* 0)
 
+(defparameter *paused* nil)
+
 (deftype world-coordinate ()
   `(integer 0 ,(1- +world-size+)))
 
@@ -37,7 +39,7 @@
 (declaim (type world-array *heightmap*))
 
 
-;;;; Colors
+;;;; Colors ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-constant +color-white+ 0)
 (define-constant +color-blue+ 1)
 (define-constant +color-yellow+ 2)
@@ -64,7 +66,7 @@
       (charms/ll:attroff (charms/ll:color-pair ,color)))))
 
 
-;;;; Utils
+;;;; Utils ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun manage-screen ()
   (multiple-value-bind (w h)
       (charms:window-dimensions charms:*standard-window*)
@@ -135,15 +137,67 @@
   :element-type t)
 
 
-;;;; World Generation
+(declaim (inline wrap)
+         (ftype (function (fixnum) world-coordinate) wrap)
+         (ftype (function (fixnum fixnum)) terrain-type terrain-char))
+
+(defun wrap (coord)
+  (mod coord +world-size+))
+
+(defun move-view (dx dy)
+  (setf *view-x* (wrap (+ *view-x* dx))
+        *view-y* (wrap (+ *view-y* dy))))
+
+(defun move-cursor (dx dy)
+  (setf *cursor-x* (clamp-w (+ *cursor-x* dx))
+        *cursor-y* (clamp-h (+ *cursor-y* dy))))
+
+
+(defun terrain-type (x y)
+  (let ((h (aref *heightmap* (wrap x) (wrap y))))
+    (cond ((< h 0.23) :deep-water)
+          ((< h 0.3)  :shallow-water)
+          ((< h 0.34) :sand)
+          ((< h 0.65) :grass)
+          ((< h 0.7)  :dirt)
+          ((< h 0.75) :hills)
+          ((< h 0.9)  :mountain)
+          (t          :snow))))
+
+(defun terrain-char (x y)
+  (case (terrain-type x y)
+    (:deep-water    (values #\~ +color-blue+))
+    (:shallow-water (values #\~ +color-cyan+))
+    (:sand          (values #\: +color-yellow+))
+    (:grass         (values #\. +color-green+))
+    (:dirt          (values #\. +color-white+))
+    (:hills         (values #\^ +color-white+))
+    (:mountain      (values #\# +color-white+))
+    (:snow          (values #\* +color-snow+))))
+
+(defun world-to-screen (wx wy)
+  "Convert world-space coordinates to screen-space."
+  (values (wrap (- wx *view-x*))
+          (wrap (- wy *view-y*))))
+
+(defun screen-to-world (sx sy)
+  "Convert screen-space coordinates to world-space."
+  (values (wrap (+ sx *view-x*))
+          (wrap (+ sy *view-y*))))
+
+(defun onscreenp (sx sy)
+  "Return whether the given screen-space coords are visible in the viewport."
+  (and (< -1 sx *screen-width*)
+       (< -1 sy *screen-height*)))
+
+
+;;;; Terrain Generation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun jitter (value spread)
   (+ value (- (random (* 2.0 spread))
               spread)))
 
 (defun average (&rest values)
   (/ (apply #'+ values) (length values)))
-
-
 
 
 (defun hm-size (heightmap)
@@ -230,62 +284,7 @@
   heightmap)
 
 
-;;;; Miscellaneous
-(declaim (inline wrap)
-         (ftype (function (fixnum) world-coordinate) wrap)
-         (ftype (function (fixnum fixnum)) terrain-type terrain-char))
-
-(defun wrap (coord)
-  (mod coord +world-size+))
-
-(defun move-view (dx dy)
-  (setf *view-x* (wrap (+ *view-x* dx))
-        *view-y* (wrap (+ *view-y* dy))))
-
-(defun move-cursor (dx dy)
-  (setf *cursor-x* (clamp-w (+ *cursor-x* dx))
-        *cursor-y* (clamp-h (+ *cursor-y* dy))))
-
-
-(defun terrain-type (x y)
-  (let ((h (aref *heightmap* (wrap x) (wrap y))))
-    (cond ((< h 0.23) :deep-water)
-          ((< h 0.3)  :shallow-water)
-          ((< h 0.34) :sand)
-          ((< h 0.65) :grass)
-          ((< h 0.7)  :dirt)
-          ((< h 0.75) :hills)
-          ((< h 0.9)  :mountain)
-          (t          :snow))))
-
-(defun terrain-char (x y)
-  (case (terrain-type x y)
-    (:deep-water    (values #\~ +color-blue+))
-    (:shallow-water (values #\~ +color-cyan+))
-    (:sand          (values #\: +color-yellow+))
-    (:grass         (values #\. +color-green+))
-    (:dirt          (values #\. +color-white+))
-    (:hills         (values #\^ +color-white+))
-    (:mountain      (values #\# +color-white+))
-    (:snow          (values #\* +color-snow+))))
-
-(defun world-to-screen (wx wy)
-  "Convert world-space coordinates to screen-space."
-  (values (wrap (- wx *view-x*))
-          (wrap (- wy *view-y*))))
-
-(defun screen-to-world (sx sy)
-  "Convert screen-space coordinates to world-space."
-  (values (wrap (+ sx *view-x*))
-          (wrap (+ sy *view-y*))))
-
-(defun onscreenp (sx sy)
-  "Return whether the given screen-space coords are visible in the viewport."
-  (and (< -1 sx *screen-width*)
-       (< -1 sy *screen-height*)))
-
-
-;;;; Roll-Your-Own-ECS
+;;;; Roll-Your-Own-ECS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Entities are stored in an {id -> entity} hash table.
 ;;;
 ;;; Entities are also indexed by component in a nested hash table:
@@ -409,7 +408,6 @@
       (find-class ',name))))
 
 
-
 (defmacro define-system (name arglist &body body)
   `(progn
     (declaim (ftype (function
@@ -437,7 +435,8 @@
     (values)))
 
 
-;;;; Coordinates
+;;;; Components ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Coordinates
 (define-component coords x y)
 
 
@@ -462,8 +461,8 @@
 
 (defun coords-move-entity (e new-x new-y)
   (coords-remove-entity e)
-  (setf (coords/x e) new-x
-        (coords/y e) new-y)
+  (setf (coords/x e) (wrap new-x)
+        (coords/y e) (wrap new-y))
   (coords-insert-entity e))
 
 (defun coords-lookup (x y)
@@ -477,14 +476,17 @@
   (coords-remove-entity entity))
 
 
-;;;; Flavor Text
+;;; Flavor Text
 (define-component flavor text)
 
-;;; Components
+
+;;; Visibility
 (define-component visible
   (glyph :type string)
   color)
 
+
+;;; Food
 (define-component edible
   energy)
 
@@ -492,10 +494,20 @@
   chance)
 
 
-;;; Entities
-(define-entity fruit (coords visible edible flavor))
+;;; Brains
+(define-component sentient function)
+
+
+(define-system sentient-act ((entity sentient))
+  (funcall (sentient/function entity) entity))
+
+
+;;;; Entities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Flora
 (define-entity tree (coords visible fruiting flavor))
+(define-entity fruit (coords visible edible flavor))
 (define-entity algae (coords visible edible))
+
 
 (defun make-tree (x y)
   (create-entity 'tree
@@ -504,7 +516,7 @@
                  :visible/glyph "T"
                  :visible/color +color-green+
                  :fruiting/chance 0.0001
-                 :flavor/text "A tree sways gently in the wind."))
+                 :flavor/text '("A tree sways gently in the wind.")))
 
 (defun make-fruit (x y)
   (create-entity 'fruit
@@ -513,7 +525,7 @@
                  :visible/glyph "ó"
                  :visible/color +color-pink+
                  :edible/energy (random-around 10 3)
-                 :flavor/text "A ripe piece of fruit has fallen to the ground."))
+                 :flavor/text '("A ripe piece of fruit has fallen to the ground.")))
 
 (defun make-algae (x y)
   (create-entity 'algae
@@ -523,15 +535,12 @@
                  :visible/color +color-green+))
 
 
-;;; Systems
-
 (define-system grow-fruit ((entity fruiting coords))
   (when (< (random 1.0) (fruiting/chance entity))
     (make-fruit (wrap (random-around (coords/x entity) 2))
                 (wrap (random-around (coords/y entity) 2)))))
 
 
-;;;; Flora
 (defun tree-probability (x y)
   (case (terrain-type x y)
     (:grass 0.01)
@@ -544,7 +553,8 @@
     (:deep-water 0.001)
     (t 0)))
 
-(defun grow-trees ()
+
+(defun generate-trees ()
   (iterate
     (for x :from 0 :below +world-size+)
     (iterate
@@ -552,7 +562,7 @@
       (when (< (random 1.0) (tree-probability x y))
         (make-tree x y)))))
 
-(defun grow-algae ()
+(defun generate-algae ()
   (iterate
     (for x :from 0 :below +world-size+)
     (iterate
@@ -561,8 +571,34 @@
         (make-algae x y)))))
 
 
+;;; Fauna
+(define-entity creature (coords visible sentient flavor))
 
-;;;; Profiling
+(defparameter *directions*
+  (iterate dirs (for dx :from -1 :to 1)
+           (iterate (for dy :from -1 :to 1)
+                    (in dirs (collect (cons dx dy) :result-type 'vector)))))
+
+(defun creature-act (c)
+  (let ((x (coords/x c))
+        (y (coords/y c)))
+    (destructuring-bind (dx . dy)
+        (random-elt *directions*)
+      (coords-move-entity c (+ x dx) (+ y dy)))))
+
+(defun make-creature (x y)
+  (create-entity 'creature
+                 :coords/x x
+                 :coords/y y
+                 :visible/color +color-white+
+                 :visible/glyph "@"
+                 :sentient/function 'creature-act
+                 :flavor/text '("A creature is here."
+                                "It likes food.")))
+
+
+
+;;;; Profiling ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (sb-sprof::profile-call-counts "SILT")
 (defvar *profiling* nil)
 
@@ -590,7 +626,7 @@
   (dump-profile))
 
 
-;;;; Game State Machine
+;;;; Game State Machine ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun render-title ()
   (render
     (write-centered '("S I L T"
@@ -605,12 +641,16 @@
                   ""
                   "You are the god of a toroidal world."
                   ""
+                  "Move your cursor over things to observe them."
+                  ""
                   "CONTROLS"
                   "  hjklyubn - move your view"
                   "  HJKLYUBN - move your view faster"
                   ""
                   "  wasd - move your cursor"
                   "  WASD - move your cursor faster"
+                  ""
+                  "  space - pause time"
                   ""
                   "  Q - quit"
                   "  R - regenerate the world"
@@ -629,6 +669,8 @@
                   ""
                   "  wasd - move your cursor"
                   "  WASD - move your cursor faster"
+                  ""
+                  "  space - pause time"
                   ""
                   "  Q - quit"
                   "  R - regenerate the world"
@@ -682,8 +724,14 @@
       (for entity :in (multiple-value-call #'coords-lookup
                         (screen-to-world *cursor-x* *cursor-y*)))
       (when (typep entity 'flavor)
-        (collect (flavor/text entity))))
-    0 0))
+        (appending (append (flavor/text entity) '("")))))
+    0 0)
+  (when *paused*
+    (write-centered '("            "
+                      "   PAUSED   "
+                      "            ")
+                    *screen-center-x*
+                    (- *screen-height* 3))))
 
 
 (defun render-map ()
@@ -705,6 +753,8 @@
       ((#\Q) (return :quit))
       ((#\R) (return :regen))
       ((#\?) (return :help))
+
+      ((#\Space) (zapf *paused* #'not))
 
       ((#\h) (move-view  -5   0))
       ((#\j) (move-view   0   5))
@@ -737,7 +787,8 @@
 
 
 (defun tick-world ()
-  (run-system 'grow-fruit))
+  (run-system 'grow-fruit)
+  (run-system 'sentient-act))
 
 
 (defun state-title ()
@@ -758,8 +809,8 @@
         *view-y* 0
         *cursor-x* 0
         *cursor-y* 0)
-  (grow-trees)
-  (grow-algae)
+  (generate-trees)
+  (generate-algae)
   (state-map))
 
 (defun state-map ()
@@ -769,7 +820,7 @@
     ((:regen) (state-generate))
     ((:help) (state-help))
     (t
-     (tick-world)
+     (unless *paused* (tick-world))
      (render-map)
      (sleep 0.02)
      (state-map))))
@@ -784,7 +835,7 @@
   'goodbye)
 
 
-;;;; Run
+;;;; Run ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun run ()
   (setf *running* t)
   (charms:with-curses ()
@@ -805,7 +856,7 @@
      (format t "Something went wrong, sorry.~%"))))
 
 
-;;;; Scratch
+;;;; Scratch ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; (run)
 ; (start-profiling)
 ; (stop-profiling)
