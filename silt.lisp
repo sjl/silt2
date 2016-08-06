@@ -490,8 +490,32 @@
 (define-component edible
   energy)
 
+(define-component decomposing
+  rate
+  (remaining :initform 1.0))
+
 (define-component fruiting
   chance)
+
+(define-component metabolizing
+  energy)
+
+
+(define-system rot ((entity decomposing))
+  (when (minusp (decf (decomposing/remaining entity)
+                      (decomposing/rate entity)))
+    (destroy-entity entity)))
+
+(define-system rot-food ((entity decomposing edible))
+  (mulf (edible/energy entity) 0.99))
+
+
+(defun decomposing-description (entity)
+  (let ((remaining (decomposing/remaining entity)))
+    (cond
+      ((< remaining 0.2) '("It is almost completely rotten."))
+      ((< remaining 0.5) '("It is partially decomposed."))
+      ((< remaining 0.8) '("It has begun to smell.")))))
 
 
 ;;; Brains
@@ -505,7 +529,7 @@
 ;;;; Entities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Flora
 (define-entity tree (coords visible fruiting flavor))
-(define-entity fruit (coords visible edible flavor))
+(define-entity fruit (coords visible edible flavor decomposing))
 (define-entity algae (coords visible edible))
 
 
@@ -525,6 +549,7 @@
                  :visible/glyph "ó"
                  :visible/color +color-pink+
                  :edible/energy (random-around 10 3)
+                 :decomposing/rate 0.001
                  :flavor/text '("A ripe piece of fruit has fallen to the ground.")))
 
 (defun make-algae (x y)
@@ -724,7 +749,13 @@
       (for entity :in (multiple-value-call #'coords-lookup
                         (screen-to-world *cursor-x* *cursor-y*)))
       (when (typep entity 'flavor)
-        (appending (append (flavor/text entity) '("")))))
+        (appending (flavor/text entity) :into text)
+
+        (when (typep entity 'decomposing)
+          (appending (decomposing-description entity) :into text))
+
+        (collecting "" :into text))
+      (finally (return text)))
     0 0)
   (when *paused*
     (write-centered '("            "
@@ -788,6 +819,8 @@
 
 (defun tick-world ()
   (run-system 'grow-fruit)
+  (run-system 'rot)
+  (run-system 'rot-food)
   (run-system 'sentient-act))
 
 
