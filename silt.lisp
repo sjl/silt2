@@ -22,6 +22,9 @@
 
 (defparameter *paused* nil)
 
+(defparameter *game-log* nil)
+
+
 (deftype world-coordinate ()
   `(integer 0 ,(1- +world-size+)))
 
@@ -125,9 +128,8 @@
             (write-string-at string tx ty)))))
 
 
-(defun l (s &rest args)
-  (write-centered (apply #'format nil s args)
-                  *screen-center-x* *screen-center-y*))
+(defun log-message (s &rest args)
+  (push (cons 100 (apply #'format nil s args)) *game-log*))
 
 
 (defclause-sequence ACROSS-FLAT-ARRAY INDEX-OF-FLAT-ARRAY
@@ -398,6 +400,9 @@
                       :initarg ,(intern (symbol-name field-name) "KEYWORD")
                       ,@field-options))))
 
+      (defun ,(symbolize 'has- name '-p) (object)
+        (typep object ',name))
+
       (initialize-component-index ',name)
 
       (defmethod initialize-instance :after ((o ,name) &key)
@@ -497,13 +502,11 @@
 (define-component fruiting
   chance)
 
-(define-component metabolizing
-  energy)
-
 
 (define-system rot ((entity decomposing))
   (when (minusp (decf (decomposing/remaining entity)
                       (decomposing/rate entity)))
+    ; (log-message "Something has rotted...")
     (destroy-entity entity)))
 
 (define-system rot-food ((entity decomposing edible))
@@ -516,6 +519,23 @@
       ((< remaining 0.2) '("It is almost completely rotten."))
       ((< remaining 0.5) '("It is partially decomposed."))
       ((< remaining 0.8) '("It has begun to smell.")))))
+
+
+;;;; Metabolism
+(define-component metabolizing
+  insulation
+  energy)
+
+
+(defgeneric starve (entity))
+
+(defmethod starve ((entity entity))
+  (destroy-entity entity))
+
+
+(define-system consume-energy ((entity metabolizing))
+  (when (minusp (decf (metabolizing/energy entity)))
+    (starve entity)))
 
 
 ;;; Brains
@@ -597,19 +617,46 @@
 
 
 ;;; Fauna
-(define-entity creature (coords visible sentient flavor))
+(define-entity creature (coords visible sentient flavor metabolizing))
+
 
 (defparameter *directions*
   (iterate dirs (for dx :from -1 :to 1)
            (iterate (for dy :from -1 :to 1)
                     (in dirs (collect (cons dx dy) :result-type 'vector)))))
 
-(defun creature-act (c)
+(defun nearby (entity)
+  (remove entity
+          (iterate
+            outer
+            (with r = 1)
+            (with x = (coords/x entity))
+            (with y = (coords/y entity))
+            (for dx :from (- r) :to r)
+            (iterate
+              (for dy :from (- r) :to r)
+              (in outer
+                  (appending (coords-lookup (+ x dx)
+                                            (+ y dy))))))))
+
+
+(defun creature-move (c)
   (let ((x (coords/x c))
         (y (coords/y c)))
     (destructuring-bind (dx . dy)
         (random-elt *directions*)
       (coords-move-entity c (+ x dx) (+ y dy)))))
+
+(defun creature-eat (c food)
+  (destroy-entity food))
+
+(defun creature-act (c)
+  (let* ((near (nearby c))
+         (food (find-if #'has-edible-p near)))
+    (if food
+      (creature-eat c food)
+      (creature-move c))))
+
 
 (defun make-creature (x y)
   (create-entity 'creature
@@ -617,6 +664,8 @@
                  :coords/y y
                  :visible/color +color-white+
                  :visible/glyph "@"
+                 :metabolizing/energy 1000
+                 :metabolizing/insulation 1
                  :sentient/function 'creature-act
                  :flavor/text '("A creature is here."
                                 "It likes food.")))
@@ -757,6 +806,10 @@
         (collecting "" :into text))
       (finally (return text)))
     0 0)
+  (let ((messages *game-log*))
+    (write-left (nreverse (mapcar #'cdr messages))
+                0
+                (- *screen-height* (length messages))))
   (when *paused*
     (write-centered '("            "
                       "   PAUSED   "
@@ -818,10 +871,21 @@
 
 
 (defun tick-world ()
+  (run-system 'consume-energy)
   (run-system 'grow-fruit)
   (run-system 'rot)
   (run-system 'rot-food)
   (run-system 'sentient-act))
+
+(defun tick-log ()
+  (flet ((decrement (message)
+           (decf (car message)))
+         (dead (message)
+           (zerop (car message))))
+    (setf *game-log*
+          (->> *game-log*
+            (mapc #'decrement)
+            (remove-if #'dead)))))
 
 
 (defun state-title ()
@@ -853,7 +917,9 @@
     ((:regen) (state-generate))
     ((:help) (state-help))
     (t
-     (unless *paused* (tick-world))
+     (unless *paused*
+       (tick-world)
+       (tick-log))
      (render-map)
      (sleep 0.02)
      (state-map))))
