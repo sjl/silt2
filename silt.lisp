@@ -24,6 +24,8 @@
 
 (defparameter *game-log* nil)
 
+(defparameter *population* 0)
+
 
 (deftype world-coordinate ()
   `(integer 0 ,(1- +world-size+)))
@@ -50,6 +52,7 @@
 (define-constant +color-snow+ 4)
 (define-constant +color-green+ 5)
 (define-constant +color-pink+ 6)
+(define-constant +color-orange+ 7)
 
 (defun init-colors ()
   (charms/ll:init-pair +color-white+ charms/ll:COLOR_WHITE charms/ll:COLOR_BLACK)
@@ -58,7 +61,8 @@
   (charms/ll:init-pair +color-cyan+ charms/ll:COLOR_CYAN charms/ll:COLOR_BLACK)
   (charms/ll:init-pair +color-snow+ charms/ll:COLOR_BLACK charms/ll:COLOR_WHITE)
   (charms/ll:init-pair +color-green+ charms/ll:COLOR_GREEN charms/ll:COLOR_BLACK)
-  (charms/ll:init-pair +color-pink+ charms/ll:COLOR_MAGENTA charms/ll:COLOR_BLACK))
+  (charms/ll:init-pair +color-pink+ charms/ll:COLOR_MAGENTA charms/ll:COLOR_BLACK)
+  (charms/ll:init-pair +color-orange+ charms/ll:COLOR_BLACK charms/ll:COLOR_YELLOW))
 
 (defmacro with-color (color &body body)
   (once-only (color)
@@ -287,14 +291,16 @@
 
 
 ;;;; Name Generation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defparameter *name-syllable-lists*
-  '(#(snarf glor snorri)
-    #(able amble bur blur chand)))
+(defparameter *name-syllables*
+  (-> "syllables.txt"
+    slurp
+    read-from-string
+    (coerce 'vector)))
 
 (defun random-name ()
   (format nil "~:(~{~A~}~)"
-          (mapcar (lambda (syllables) (random-elt syllables))
-                  *name-syllable-lists*)))
+          (iterate (repeat (random-range 1 5))
+                   (collect (random-elt *name-syllables*)))))
 
 
 ;;;; Roll-Your-Own-ECS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -687,6 +693,41 @@
   (log-message "~A has starved!" (creature-name c)))
 
 
+(defmethod entity-created :after ((e creature))
+  (declare (ignore e))
+  (incf *population*))
+
+(defmethod entity-destroyed :after ((e creature))
+  (declare (ignore e))
+  (decf *population*))
+
+
+;;; Mysteries
+(define-entity mystery (coords visible sentient flavor))
+
+
+(defun make-monolith ()
+  (create-entity
+    'mystery
+    :coords/x 0
+    :coords/y 0
+    :visible/glyph " "
+    :visible/color +color-orange+
+    :sentient/function
+    (lambda (m)
+      (when (zerop *population*)
+        (let ((eve (make-creature (coords/x m)
+                                  (1+ (coords/y m)))))
+          (log-message "The monolith flashes brightly and ~A appears in front of it!"
+                       (creature-name eve)))))
+    :flavor/text '("A sleek, rectangular, octarine monolith stands here."
+                   "Who placed it?")))
+
+
+(defun generate-mysteries ()
+  (make-monolith))
+
+
 ;;;; Profiling ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (sb-sprof::profile-call-counts "SILT")
 (defvar *profiling* nil)
@@ -805,7 +846,8 @@
     (list
       (format nil "[~D, ~D]" *view-x* *view-y*)
       (format nil "[~D, ~D]" *cursor-x* *cursor-y*)
-      (format nil "~D entities" (hash-table-count *entity-index*)))
+      (format nil "~D creature~:P" *population*)
+      (format nil "~D entit~:@P" (hash-table-count *entity-index*)))
     (1- *screen-width*)
     0)
   (write-left
@@ -826,11 +868,11 @@
                 0
                 (- *screen-height* (length messages))))
   (when *paused*
-    (write-centered '("            "
-                      "   PAUSED   "
-                      "            ")
-                    *screen-center-x*
-                    (- *screen-height* 3))))
+    (write-right '("            "
+                   "   PAUSED   "
+                   "            ")
+                 *screen-width*
+                 (- *screen-height* 3))))
 
 
 (defun render-map ()
@@ -916,13 +958,16 @@
 (defun state-generate ()
   (render-generate)
   (clear-entities)
+  (manage-screen)
   (setf *heightmap* (diamond-square (allocate-heightmap))
-        *view-x* 0
-        *view-y* 0
+        *view-x* (wrap (- *screen-center-x*))
+        *view-y* (wrap (- *screen-center-y*))
         *cursor-x* 0
-        *cursor-y* 0)
+        *cursor-y* 0
+        *population* 0)
   (generate-trees)
   (generate-algae)
+  (generate-mysteries)
   (state-map))
 
 (defun state-map ()
