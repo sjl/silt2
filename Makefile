@@ -9,6 +9,7 @@ build/silt: $(lisps)
 	ros build build/silt.ros
 
 /opt/silt/silt: build/silt
+	rm /opt/silt/silt
 	cp build/silt /opt/silt/silt
 
 deploy:
