@@ -503,6 +503,10 @@
 (define-component flavor text)
 
 
+;;; Inspection
+(define-component inspectable slots)
+
+
 ;;; Visibility
 (define-component visible
   (glyph :type string)
@@ -577,7 +581,7 @@
 ;;;; Entities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Flora
 (define-entity tree (coords visible fruiting flavor))
-(define-entity fruit (coords visible edible flavor decomposing))
+(define-entity fruit (coords visible edible flavor decomposing inspectable))
 (define-entity algae (coords visible edible))
 
 
@@ -596,14 +600,16 @@
                  :coords/y y
                  :visible/glyph "ó"
                  :visible/color +color-pink+
-                 :edible/energy (random-around 10 3)
+                 :edible/energy (random-around 100 10)
                  :decomposing/rate 0.001
+                 :inspectable/slots '(edible/energy)
                  :flavor/text '("A ripe piece of fruit has fallen to the ground.")))
 
 (defun make-algae (x y)
   (create-entity 'algae
                  :coords/x x
                  :coords/y y
+                 :edible/energy 10
                  :visible/glyph "`"
                  :visible/color +color-green+))
 
@@ -645,7 +651,8 @@
 
 
 ;;; Fauna
-(define-entity creature (coords visible sentient flavor metabolizing aging)
+(define-entity creature
+    (coords visible sentient flavor metabolizing aging inspectable)
   (name :accessor creature-name :initarg :name))
 
 
@@ -699,6 +706,7 @@
                    :metabolizing/energy 1000
                    :metabolizing/insulation 1
                    :sentient/function 'creature-act
+                   :inspectable/slots '(metabolizing/energy aging/birthtick aging/age)
                    :flavor/text
                    (list (format nil "A creature named ~:(~A~) is here." name)
                          "It likes food."))))
@@ -774,6 +782,22 @@
 
 
 ;;;; Game State Machine ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defparameter *controls-text*
+  '("CONTROLS"
+    "  hjklyubn - move your view"
+    "  HJKLYUBN - move your view faster"
+    ""
+    "  wasd - move your cursor"
+    "  WASD - move your cursor faster"
+    ""
+    "  space - pause time"
+    "  ` - tick time once while paused"
+    ""
+    "  Q - quit"
+    "  R - regenerate the world"
+    ""
+    "  ? - help"))
+
 (defun render-title ()
   (render
     (write-centered '("S I L T"
@@ -784,48 +808,22 @@
 
 (defun render-intro ()
   (render
-    (write-left '("Welcome to Silt."
-                  ""
-                  "You are the god of a toroidal world."
-                  ""
-                  "Move your cursor over things to observe them."
-                  ""
-                  "CONTROLS"
-                  "  hjklyubn - move your view"
-                  "  HJKLYUBN - move your view faster"
-                  ""
-                  "  wasd - move your cursor"
-                  "  WASD - move your cursor faster"
-                  ""
-                  "  space - pause time"
-                  ""
-                  "  Q - quit"
-                  "  R - regenerate the world"
-                  ""
-                  "  ? - help"
-                  ""
-                  "Press any key to begin."
-                  )
+    (write-left (append '("Welcome to Silt."
+                          ""
+                          "You are the god of a toroidal world."
+                          ""
+                          "Move your cursor over things to observe them."
+                          "")
+                        *controls-text*
+                        '(""
+                          "Press any key to begin."))
                 1 1)))
 
 (defun render-help ()
   (render
-    (write-left '("CONTROLS"
-                  "  hjklyubn - move your view"
-                  "  HJKLYUBN - move your view faster"
-                  ""
-                  "  wasd - move your cursor"
-                  "  WASD - move your cursor faster"
-                  ""
-                  "  space - pause time"
-                  ""
-                  "  Q - quit"
-                  "  R - regenerate the world"
-                  ""
-                  "  ? - help"
-                  ""
-                  "Press any key to continue."
-                  )
+    (write-left (append *controls-text*
+                        '(""
+                          "Press any key to continue."))
                 1 1)))
 
 (defun render-generate ()
@@ -834,7 +832,7 @@
                     *screen-center-x* *screen-center-y*)))
 
 
-(defun draw-terrain ()
+(defun draw-map ()
   (iterate
     (repeat *screen-width*)
     (for sx :from 0)
@@ -858,7 +856,7 @@
             terrain-char
             sx sy))))))
 
-(defun draw-ui ()
+(defun draw-hud ()
   (write-right
     (list
       (format nil "[~D, ~D]" *view-x* *view-y*)
@@ -867,7 +865,27 @@
       (format nil "~D entit~:@P" (hash-table-count *entity-index*))
       (format nil "tick ~D" *tick*))
     (1- *screen-width*)
-    0)
+    1))
+
+(defun draw-paused ()
+  (when *paused*
+    (write-right '("            "
+                   "   PAUSED   "
+                   "            ")
+                 *screen-width*
+                 (- *screen-height* 3))))
+
+(defun draw-log ()
+  (let ((messages *game-log*))
+    (write-left (nreverse (mapcar #'cdr messages))
+                0
+                (- *screen-height* (length messages)))))
+
+
+(defun indent (lines)
+  (mapcar (lambda (line) (concatenate 'string "    " line)) lines))
+
+(defun draw-selected ()
   (write-left
     (iterate
       (for entity :in (multiple-value-call #'coords-lookup
@@ -876,26 +894,30 @@
         (appending (flavor/text entity) :into text)
 
         (when (typep entity 'decomposing)
-          (appending (decomposing-description entity) :into text))
+          (appending (indent (decomposing-description entity)) :into text))
+
+        (when (typep entity 'inspectable)
+          (appending
+            (indent (iterate
+                      (for slot :in (inspectable/slots entity))
+                      (collect (format nil "~A ~A" slot (funcall slot entity)))))
+            :into text))
 
         (collecting "" :into text))
       (finally (return text)))
-    0 0)
-  (let ((messages *game-log*))
-    (write-left (nreverse (mapcar #'cdr messages))
-                0
-                (- *screen-height* (length messages))))
-  (when *paused*
-    (write-right '("            "
-                   "   PAUSED   "
-                   "            ")
-                 *screen-width*
-                 (- *screen-height* 3))))
+    1 1))
+
+
+(defun draw-ui ()
+  (draw-hud)
+  (draw-selected)
+  (draw-paused)
+  (draw-log))
 
 
 (defun render-map ()
   (manage-screen)
-  (draw-terrain)
+  (draw-map)
   (draw-ui)
   (charms:move-cursor charms:*standard-window* *cursor-x* *cursor-y*))
 
@@ -914,6 +936,7 @@
       ((#\?) (return :help))
 
       ((#\Space) (zapf *paused* #'not))
+      ((#\`) (when *paused* (tick-world)))
 
       ((#\h) (move-view  -5   0))
       ((#\j) (move-view   0   5))
@@ -942,7 +965,7 @@
       ((#\S) (move-cursor   0  10))
       ((#\D) (move-cursor  10   0))
 
-      (t (push key *debug*) t))))
+      (t (push key *debug*)))))
 
 
 (defun tick-world ()
@@ -985,7 +1008,8 @@
         *cursor-x* 0
         *cursor-y* 0
         *population* 0
-        *tick* 0)
+        *tick* 0
+        *paused* nil)
   (generate-trees)
   (generate-algae)
   (generate-mysteries)
