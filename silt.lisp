@@ -2,28 +2,18 @@
 (require :sb-sprof)
 
 ;;;; Data ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defparameter *running* nil)
-(defparameter *running* t)
-(defparameter *debug* nil)
-
+(define-constant +world-exponent+ 9)
+(define-constant +world-size+ (expt 2 +world-exponent+))
 (defparameter *screen-width* 1)
 (defparameter *screen-height* 1)
 (defparameter *screen-center-x* 1)
 (defparameter *screen-center-y* 1)
-
-(define-constant +world-exponent+ 9)
-(define-constant +world-size+ (expt 2 +world-exponent+))
-
 (defparameter *view-x* 0)
 (defparameter *view-y* 0)
-
 (defparameter *cursor-x* 0)
 (defparameter *cursor-y* 0)
-
 (defparameter *paused* nil)
-
 (defparameter *game-log* nil)
-
 (defparameter *population* 0)
 (defparameter *tick* 0)
 
@@ -34,15 +24,16 @@
 (deftype world-array ()
   `(simple-array single-float (,+world-size+ ,+world-size+)))
 
+
 (defun allocate-heightmap ()
   (make-array (list +world-size+ +world-size+)
     :element-type 'single-float
     :initial-element 0.0
     :adjustable nil))
 
-(defvar *heightmap* (allocate-heightmap))
 
 (declaim (type world-array *heightmap*))
+(defvar *heightmap* (allocate-heightmap))
 
 
 ;;;; Colors ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -104,6 +95,13 @@
     (clamp-w x)
     (clamp-h y)))
 
+(defun write-char-at (char x y)
+  (charms:write-char-at-point
+    charms:*standard-window*
+    char
+    (clamp-w x)
+    (clamp-h y)))
+
 
 (defun write-centered (text x y)
   (etypecase text
@@ -134,7 +132,7 @@
 
 
 (defun log-message (s &rest args)
-  (push (cons 100 (apply #'format nil s args)) *game-log*))
+  (push (cons 200 (apply #'format nil s args)) *game-log*))
 
 
 (defclause-sequence ACROSS-FLAT-ARRAY INDEX-OF-FLAT-ARRAY
@@ -199,43 +197,33 @@
 
 
 ;;;; Terrain Generation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defun jitter (value spread)
-  (+ value (- (random (* 2.0 spread))
-              spread)))
+(defun average4 (a b c d)
+  (/ (+ a b c d) 4))
 
-(defun average (&rest values)
-  (/ (apply #'+ values) (length values)))
-
-
-(defun hm-size (heightmap)
-  (first (array-dimensions heightmap)))
 
 (defun hm-ref (heightmap x y)
-  (let ((last (hm-size heightmap)))
-    (aref heightmap
-          (cond
-            ((< -1 x last) x)
-            ((= x last) 0)
-            (t (mod x last)))
-          (cond
-            ((< -1 y last) y)
-            ((= y last) 0)
-            (t (mod y last))))))
+  (flet ((ref (n)
+           (cond
+             ((< -1 n +world-size+) n)
+             ((= n +world-size+) 0)
+             (t (mod n +world-size+)))))
+    (aref heightmap (ref x) (ref y))))
 
 
-(defun normalize-heightmap (heightmap)
+(defun heightmap-extrema (heightmap)
   (iterate
-    (for i :from 0 :below (array-total-size heightmap))
-    (for v = (row-major-aref heightmap i))
+    (for v :across-flat-array heightmap :with-index i)
     (maximize v :into max)
     (minimize v :into min)
-    (finally
-      (iterate
-        (with span = (- max min))
-        (for i :from 0 :below (array-total-size heightmap))
-        (for v = (row-major-aref heightmap i))
-        (setf (row-major-aref heightmap i)
-              (/ (- v min) span))))))
+    (finally (return (values min max)))))
+
+(defun normalize-heightmap (heightmap)
+  (multiple-value-bind (min max) (heightmap-extrema heightmap)
+    (iterate
+      (with span = (- max min))
+      (for v :across-flat-array heightmap :with-index i)
+      (setf (row-major-aref heightmap i)
+            (/ (- v min) span)))))
 
 
 (defun ds-init (heightmap)
@@ -244,43 +232,43 @@
 
 (defun ds-square (heightmap x y radius spread)
   (setf (aref heightmap x y)
-        (jitter (average (hm-ref heightmap (- x radius) (- y radius))
-                         (hm-ref heightmap (- x radius) (+ y radius))
-                         (hm-ref heightmap (+ x radius) (- y radius))
-                         (hm-ref heightmap (+ x radius) (+ y radius)))
-                spread)))
+        (random-around (average4 (hm-ref heightmap (- x radius) (- y radius))
+                                 (hm-ref heightmap (- x radius) (+ y radius))
+                                 (hm-ref heightmap (+ x radius) (- y radius))
+                                 (hm-ref heightmap (+ x radius) (+ y radius)))
+                       spread)))
 
 (defun ds-diamond (heightmap x y radius spread)
   (setf (aref heightmap x y)
-        (jitter (average (hm-ref heightmap (- x radius) y)
-                         (hm-ref heightmap (+ x radius) y)
-                         (hm-ref heightmap x (- y radius))
-                         (hm-ref heightmap x (+ y radius)))
-                spread)))
+        (random-around (average4 (hm-ref heightmap (- x radius) y)
+                                 (hm-ref heightmap (+ x radius) y)
+                                 (hm-ref heightmap x (- y radius))
+                                 (hm-ref heightmap x (+ y radius)))
+                       spread)))
 
 
 (defun ds-squares (heightmap radius spread)
   (iterate
-    (for x :from radius :below (hm-size heightmap) :by (* 2 radius))
+    (for x :from radius :below +world-size+ :by (* 2 radius))
     (iterate
-      (for y :from radius :below (hm-size heightmap) :by (* 2 radius))
+      (for y :from radius :below +world-size+ :by (* 2 radius))
       (ds-square heightmap x y radius spread))))
 
 (defun ds-diamonds (heightmap radius spread)
   (iterate
     (for i :from 0)
-    (for y :from 0 :below (hm-size heightmap) :by radius)
-    (for shift = (if (evenp i) radius 0))
+    (for y :from 0 :below +world-size+ :by radius)
     (iterate
-      (for x :from shift :below (hm-size heightmap) :by (* 2 radius))
+      (with shift = (if (evenp i) radius 0))
+      (for x :from shift :below +world-size+ :by (* 2 radius))
       (ds-diamond heightmap x y radius spread))))
 
 
 (defun diamond-square (heightmap)
   (ds-init heightmap)
-  (let ((spread 0.7)
-        (spread-reduction 0.6))
-    (recursively ((radius (floor (hm-size heightmap) 2))
+  (let ((spread 0.8)
+        (spread-reduction 0.7))
+    (recursively ((radius (floor +world-size+ 2))
                   (spread spread))
       (when (>= radius 1)
         (ds-squares heightmap radius spread)
@@ -313,7 +301,7 @@
 ;;;
 ;;; Entities are indexed by system too:
 ;;;
-;;;     {system-symbol -> 
+;;;     {system-symbol ->
 ;;;         ({id -> entity}   ; arg1
 ;;;          {id -> entity})  ; arg2
 ;;;     }
@@ -323,36 +311,44 @@
 ;;;     {system-symbol -> (cons system-function type-specifier-list)}
 ;;;
 ;;; TODO: Figure out the distinct problem.
+;;; TODO: Unfuck redefining of systems.
 
 (defvar *entity-id-counter* 0)
 (defvar *entity-index* (make-hash-table))
 (defvar *component-index* (make-hash-table))
-(defvar *systems* (make-hash-table))
 (defvar *system-index* (make-hash-table))
+(defvar *systems* (make-hash-table))
 
-
-(defun clear-entities ()
-  (mapc #'destroy-entity (hash-table-values *entity-index*)))
 
 (defun get-entity (id)
   (gethash id *entity-index*))
 
+(defun map-entities (function &optional (type 'entity))
+  (->> *entity-index*
+    hash-table-values
+    (remove-if-not (lambda (entity) (typep entity type)))
+    (mapcar function)))
 
-(defun index-entity (e)
-  (setf (gethash (entity-id e) *entity-index*) e))
+(defun clear-entities ()
+  (mapc #'destroy-entity (hash-table-values *entity-index*)))
+
+
+(defun index-entity (entity)
+  (setf (gethash (entity-id entity) *entity-index*) entity))
 
 (defun satisfies-system-type-specifier-p (entity specifier)
   (every (lambda (component) (typep entity component))
          specifier))
 
-(defun index-entity-systems (e)
+(defun index-entity-systems (entity)
   (iterate
+    (with id = (entity-id entity))
     (for (system (function . type-specifiers)) :in-hashtable *systems*)
     (iterate
       (for argument-index :in (gethash system *system-index*))
       (for specifier :in type-specifiers)
-      (when (satisfies-system-type-specifier-p e specifier)
-        (setf (gethash (entity-id e) argument-index) e)))))
+      (when (satisfies-system-type-specifier-p entity specifier)
+        (setf (gethash id argument-index) entity)))))
 
 
 (defclass entity ()
@@ -399,9 +395,7 @@
 
 
 (defun initialize-component-index (name)
-  (unless (hash-table-key-exists-p *component-index* name)
-    (setf (gethash name *component-index*)
-          (make-hash-table))))
+  (gethash-or-init name *component-index* (make-hash-table)))
 
 (defmacro define-component (name &rest fields)
   (flet ((clean-field (f)
@@ -415,10 +409,10 @@
            (for field-name = (symbolize name '/ field))
            (collect `(,field-name
                       :accessor ,field-name
-                      :initarg ,(intern (symbol-name field-name) "KEYWORD")
+                      :initarg ,(intern (symbol-name field-name) "KEYWORD") ; *opens trenchcoat*
                       ,@field-options))))
 
-      (defun ,(symbolize 'has- name '-p) (object)
+      (defun ,(symbolize name '?) (object)
         (typep object ',name))
 
       (initialize-component-index ',name)
@@ -508,9 +502,7 @@
 
 
 ;;; Visibility
-(define-component visible
-  (glyph :type string)
-  color)
+(define-component visible glyph color)
 
 
 ;;; Food
@@ -528,11 +520,10 @@
 (define-system rot ((entity decomposing))
   (when (minusp (decf (decomposing/remaining entity)
                       (decomposing/rate entity)))
-    ; (log-message "Something has rotted...")
     (destroy-entity entity)))
 
 (define-system rot-food ((entity decomposing edible))
-  (mulf (edible/energy entity) 0.99))
+  (mulf (edible/energy entity) 0.999))
 
 
 (defun decomposing-description (entity)
@@ -689,7 +680,7 @@
 
 (defun creature-act (c)
   (let* ((near (nearby c))
-         (food (find-if #'has-edible-p near)))
+         (food (find-if #'edible? near)))
     (if food
       (creature-eat c food)
       (creature-move c))))
@@ -697,23 +688,23 @@
 
 (defun make-creature (x y)
   (let ((name (random-name)))
-    (create-entity 'creature
-                   :name name
-                   :coords/x x
-                   :coords/y y
-                   :visible/color +color-white+
-                   :visible/glyph "@"
-                   :metabolizing/energy 1000
-                   :metabolizing/insulation 1
-                   :sentient/function 'creature-act
-                   :inspectable/slots '(metabolizing/energy aging/birthtick aging/age)
-                   :flavor/text
-                   (list (format nil "A creature named ~:(~A~) is here." name)
+    (create-entity
+      'creature
+      :name name
+      :coords/x x
+      :coords/y y
+      :visible/color +color-white+
+      :visible/glyph "@"
+      :metabolizing/energy 1000
+      :metabolizing/insulation 1
+      :sentient/function 'creature-act
+      :inspectable/slots '(metabolizing/energy aging/birthtick aging/age)
+      :flavor/text (list (format nil "A creature named ~:(~A~) is here." name)
                          "It likes food."))))
 
 
 (defmethod starve :after ((c creature))
-  (log-message "~A has starved.  It was ~D tick~:P old."
+  (log-message "~A has starved after living for ~D tick~:P."
                (creature-name c)
                (aging/age c)))
 
@@ -728,24 +719,32 @@
 
 
 ;;; Mysteries
-(define-entity mystery (coords visible sentient flavor))
+(define-entity monolith (coords visible sentient flavor)
+  (countdown :initarg :countdown :accessor monolith-countdown))
 
+
+(defun monolith-act (m)
+  (when (zerop *population*)
+    (case (decf (monolith-countdown m))
+      (40 (log-message "The monolith begins to glow."))
+      (0 (progn
+           (setf (monolith-countdown m) 100)
+           (-<> (make-creature (coords/x m) (1+ (coords/y m)))
+             creature-name
+             (log-message
+               "The monolith flashes brightly and ~A appears in front of it!"
+               <>)))))))
 
 (defun make-monolith ()
-  (create-entity
-    'mystery
-    :coords/x 0
-    :coords/y 0
-    :visible/glyph " "
-    :visible/color +color-orange+
-    :sentient/function
-    (lambda (m)
-      (when (zerop *population*)
-        (let ((eve (make-creature (coords/x m)
-                                  (1+ (coords/y m)))))
-          (log-message "The monolith flashes brightly and ~A appears in front of it!"
-                       (creature-name eve)))))
-    :flavor/text '("A sleek, rectangular, octarine monolith stands here."
+  (create-entity 'monolith
+                 :countdown 50
+                 :coords/x 0
+                 :coords/y 0
+                 :visible/glyph " "
+                 :visible/color +color-orange+
+                 :sentient/function 'monolith-act
+                 :flavor/text
+                 '("A sleek, rectangular, octarine monolith stands here."
                    "Who placed it?")))
 
 
@@ -754,9 +753,6 @@
 
 
 ;;;; Profiling ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(sb-sprof::profile-call-counts "SILT")
-(defvar *profiling* nil)
-
 (defun dump-profile ()
   (with-open-file (*standard-output* "silt.prof"
                                      :direction :output
@@ -769,14 +765,13 @@
 
 (defun start-profiling ()
   (sb-sprof::reset)
+  (sb-sprof::profile-call-counts "SILT")
   (sb-sprof::start-profiling :max-samples 50000
                              :mode :cpu
                              :sample-interval 0.005
-                             :threads :all)
-  (setf *profiling* t))
+                             :threads :all))
 
 (defun stop-profiling ()
-  (setf *profiling* nil)
   (sb-sprof::stop-profiling)
   (dump-profile))
 
@@ -841,20 +836,13 @@
       (repeat *screen-height*)
       (for sy :from 0)
       (for wy :from *view-y*)
-      (for (values terrain-char terrain-color) = (terrain-char wx wy))
-      (for entity = (car (member-if (lambda (e) (typep e 'visible))
-                                    (coords-lookup wx wy))))
+      (for entity = (find-if #'visible? (coords-lookup wx wy)))
       (if entity
         (with-color (visible/color entity)
-          (charms:write-string-at-point
-            charms:*standard-window*
-            (visible/glyph entity)
-            sx sy))
-        (with-color terrain-color
-          (charms:write-char-at-point
-            charms:*standard-window*
-            terrain-char
-            sx sy))))))
+          (write-string-at (visible/glyph entity) sx sy))
+        (multiple-value-bind (glyph color) (terrain-char wx wy)
+          (with-color color
+            (write-char-at glyph sx sy)))))))
 
 (defun draw-hud ()
   (write-right
@@ -956,16 +944,14 @@
       ((#\B) (move-view -30  30))
       ((#\N) (move-view  30  30))
 
-      ((#\w) (move-cursor  0 -1))
-      ((#\a) (move-cursor -1  0))
-      ((#\s) (move-cursor  0  1))
-      ((#\d) (move-cursor  1  0))
+      ((#\w) (move-cursor   0  -1))
+      ((#\a) (move-cursor  -1   0))
+      ((#\s) (move-cursor   0   1))
+      ((#\d) (move-cursor   1   0))
       ((#\W) (move-cursor   0 -10))
       ((#\A) (move-cursor -10   0))
       ((#\S) (move-cursor   0  10))
-      ((#\D) (move-cursor  10   0))
-
-      (t (push key *debug*)))))
+      ((#\D) (move-cursor  10   0)))))
 
 
 (defun tick-world ()
@@ -998,37 +984,49 @@
   (press-any-key)
   (state-generate))
 
-(defun state-generate ()
+
+(defun reset-world ()
   (setf *random-state* (make-random-state t))
-  (render-generate)
   (clear-entities)
-  (manage-screen)
-  (setf *heightmap* (diamond-square (allocate-heightmap))
-        *view-x* (wrap (- *screen-center-x*))
+  (setf *view-x* (wrap (- *screen-center-x*))
         *view-y* (wrap (- *screen-center-y*))
         *cursor-x* 0
         *cursor-y* 0
         *population* 0
         *tick* 0
-        *paused* nil)
+        *paused* nil))
+
+(defun generate-world ()
+  (setf *heightmap* (diamond-square (allocate-heightmap)))
   (generate-trees)
   (generate-algae)
-  (generate-mysteries)
+  (generate-mysteries))
+
+(defun state-generate ()
+  (manage-screen)
+  (render-generate)
+  (reset-world)
+  (generate-world)
   (state-map))
+
 
 (defun state-map ()
   (charms:enable-non-blocking-mode charms:*standard-window*)
+  (state-map-loop))
+
+(defun state-map-loop ()
   (case (handle-input-map)
     ((:quit) (state-quit))
     ((:regen) (state-generate))
     ((:help) (state-help))
-    (t
-     (unless *paused*
-       (tick-world)
-       (tick-log))
-     (render-map)
-     (sleep 0.02)
-     (state-map))))
+    (t (progn
+         (unless *paused*
+           (tick-world)
+           (tick-log))
+         (render-map)
+         (sleep 0.02)
+         (state-map-loop)))))
+
 
 
 (defun state-help ()
@@ -1042,7 +1040,6 @@
 
 ;;;; Run ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun run ()
-  (setf *running* t)
   (charms:with-curses ()
     (charms:disable-echoing)
     (charms:enable-raw-input :interpret-control-characters t)
