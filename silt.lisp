@@ -999,6 +999,7 @@
   (state-generate))
 
 (defun state-generate ()
+  (setf *random-state* (make-random-state t))
   (render-generate)
   (clear-entities)
   (manage-screen)
