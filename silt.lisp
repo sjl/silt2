@@ -670,6 +670,9 @@
     (coords visible sentient flavor metabolizing aging inspectable)
   (name :accessor creature-name :initarg :name))
 
+(define-entity corpse
+    (coords visible flavor decomposing))
+
 
 (defparameter *directions*
   (iterate dirs (for dx :from -1 :to 1)
@@ -726,11 +729,24 @@
       :flavor/text (list (format nil "A creature named ~:(~A~) is here." name)
                          "It likes food."))))
 
+(defun make-corpse (x y name)
+  (create-entity
+    'corpse
+    :coords/x x
+    :coords/y y
+    :visible/color +color-white+
+    :visible/glyph "%"
+    :decomposing/rate 0.001
+    :flavor/text (list (format nil "The corpse of ~:(~A~) lies here." name))))
+
 
 (defmethod starve :after ((c creature))
   (log-message "~A has starved after living for ~D tick~:P."
                (creature-name c)
-               (aging/age c)))
+               (aging/age c))
+  (make-corpse (coords/x c)
+               (coords/y c)
+               (creature-name c)))
 
 
 (defmethod entity-created :after ((e creature))
