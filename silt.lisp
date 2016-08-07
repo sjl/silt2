@@ -630,7 +630,7 @@
                  :coords/y y
                  :visible/glyph "ó"
                  :visible/color +color-pink+
-                 :edible/energy (random-around 100 10)
+                 :edible/energy (random-around 300 10)
                  :decomposing/rate 0.001
                  :inspectable/slots '(edible/energy)
                  :flavor/text '("A ripe piece of fruit has fallen to the ground.")))
@@ -709,6 +709,17 @@
                                             (+ y dy))))))))
 
 
+(defun creature-should-reproduce-p (c)
+  (and (> (metabolizing/energy c) 1000)
+       (< (random 1.0) 0.01)))
+
+(defun creature-reproduce (parent)
+  (let ((energy (floor (metabolizing/energy parent) 2))
+        (child (make-creature (coords/x parent) (coords/y parent))))
+    (setf (metabolizing/energy parent) energy
+          (metabolizing/energy child) energy)
+    (log-message "~A begets ~A." (creature-name parent) (creature-name child))))
+
 (defun creature-move (c)
   (let ((x (coords/x c))
         (y (coords/y c)))
@@ -723,9 +734,10 @@
 (defun creature-act (c)
   (let* ((near (nearby c))
          (food (find-if #'edible? near)))
-    (if food
-      (creature-eat c food)
-      (creature-move c))))
+    (cond
+      (food (creature-eat c food))
+      ((creature-should-reproduce-p c) (creature-reproduce c))
+      (t (creature-move c)))))
 
 
 (defun make-creature (x y)
@@ -737,7 +749,7 @@
       :coords/y y
       :visible/color +color-white+
       :visible/glyph "@"
-      :metabolizing/energy 1000
+      :metabolizing/energy 2000
       :metabolizing/insulation 1
       :sentient/function 'creature-act
       :inspectable/slots '(metabolizing/energy aging/birthtick aging/age)
