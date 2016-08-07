@@ -546,7 +546,8 @@
 
 ;;; Food
 (define-component edible
-  energy)
+  energy
+  original-energy)
 
 (define-component decomposing
   rate
@@ -556,13 +557,20 @@
   chance)
 
 
+(defmethod initialize-instance :after ((e edible) &key)
+  (setf (edible/original-energy e)
+        (edible/energy e)))
+
+
 (define-system rot ((entity decomposing))
   (when (minusp (decf (decomposing/remaining entity)
                       (decomposing/rate entity)))
     (destroy-entity entity)))
 
 (define-system rot-food ((entity decomposing edible))
-  (mulf (edible/energy entity) 0.999))
+  (setf (edible/energy entity)
+        (lerp 0.0 (edible/original-energy entity)
+              (decomposing/remaining entity))))
 
 
 (defun decomposing-description (entity)
@@ -631,7 +639,7 @@
                  :visible/glyph "ó"
                  :visible/color +color-pink+
                  :edible/energy (random-around 300 10)
-                 :decomposing/rate 0.001
+                 :decomposing/rate 0.0005
                  :inspectable/slots '(edible/energy)
                  :flavor/text '("A ripe piece of fruit has fallen to the ground.")))
 
@@ -709,15 +717,26 @@
                                             (+ y dy))))))))
 
 
+(defun creature-mutate (c)
+  (let ((v (random 1.0)))
+    (cond
+      (t (setf (visible/glyph c)
+               (random-elt #("@" "$" "?" "!" "&" "+")))))))
+
 (defun creature-should-reproduce-p (c)
   (and (> (metabolizing/energy c) 1000)
        (< (random 1.0) 0.01)))
+
+(defun creature-should-mutate-p ()
+  (< (random 1.0) 0.01))
 
 (defun creature-reproduce (parent)
   (let ((energy (floor (metabolizing/energy parent) 2))
         (child (make-creature (coords/x parent) (coords/y parent))))
     (setf (metabolizing/energy parent) energy
           (metabolizing/energy child) energy)
+    (when (creature-should-mutate-p)
+      (creature-mutate child))
     (log-message "~A begets ~A." (creature-name parent) (creature-name child))))
 
 (defun creature-move (c)
@@ -1097,7 +1116,7 @@
            (tick-world)
            (tick-log))
          (render-map)
-         (sleep 0.02)
+         (sleep 0.01)
          (state-map-loop)))))
 
 
