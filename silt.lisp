@@ -104,6 +104,13 @@
     (clamp-h y)))
 
 
+(defun left-pad (s n)
+  (format nil "~v@A" n s))
+
+(defun right-pad (s n)
+  (format nil "~vA" n s))
+
+
 (defun write-centered (text x y)
   (etypecase text
     (string (write-centered (list text) x y))
@@ -113,23 +120,31 @@
             (for ty :from y)
             (write-string-at string tx ty)))))
 
-(defun write-left (text x y)
+(defun write-left (text x y &key pad)
   (etypecase text
     (string (write-left (list text) x y))
     (list (iterate
+            (with padding = (if (and pad text)
+                              (apply #'max (mapcar #'length text))
+                              0))
             (for string :in text)
             (for tx = x)
             (for ty :from y)
-            (write-string-at string tx ty)))))
+            (unless (string= "" string)
+              (write-string-at (right-pad string padding) tx ty))))))
 
-(defun write-right (text x y)
+(defun write-right (text x y &key pad)
   (etypecase text
     (string (write-right (list text) x y))
     (list (iterate
+            (with padding = (if (and pad text)
+                              (apply #'max (mapcar #'length text))
+                              0))
             (for string :in text)
-            (for tx = (- x (length string)))
+            (for tx = (- x (max padding (length string))))
             (for ty :from y)
-            (write-string-at string tx ty)))))
+            (unless (string= "" string)
+              (write-string-at (left-pad string padding) tx ty))))))
 
 
 (defun log-message (s &rest args)
@@ -898,7 +913,8 @@
                 (/ (cdr *timing*) internal-time-units-per-second 1/1000)
                 (car *timing*))))
     (1- *screen-width*)
-    1))
+    1
+    :pad t))
 
 (defun draw-paused ()
   (when *paused*
@@ -938,7 +954,7 @@
 
         (collecting "" :into text))
       (finally (return text)))
-    1 1))
+    1 1 :pad t))
 
 
 (defun draw-ui ()
