@@ -16,6 +16,7 @@
 (defparameter *game-log* nil)
 (defparameter *population* 0)
 (defparameter *tick* 0)
+(defparameter *timing* (cons 0 0))
 
 
 (deftype world-coordinate ()
@@ -194,6 +195,20 @@
   "Return whether the given screen-space coords are visible in the viewport."
   (and (< -1 sx *screen-width*)
        (< -1 sy *screen-height*)))
+
+
+(defmacro timing (&body body)
+  `(let ((start (get-internal-run-time)))
+     (prog1
+       (progn ,@body)
+       (setf (cdr *timing*)
+             (/ (+ (* (car *timing*) (cdr *timing*))
+                   (- (get-internal-run-time) start))
+               (incf (car *timing*)))))))
+
+(defun reset-timing ()
+  (setf *timing* (cons 0 0)))
+
 
 
 ;;;; Terrain Generation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -454,27 +469,32 @@
 
 ;;;; Components ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Coordinates
-(define-component coords x y)
+(define-component coords
+  (x :type world-coordinate)
+  (y :type world-coordinate))
 
 
-(defparameter *coords-contents* (make-hash-table))
+(deftype coordinate-array ()
+  `(simple-array list (,+world-size+ ,+world-size+)))
+
+(declaim (type coordinate-array *coords-contents*))
+(defparameter *coords-contents*
+  (make-array (list +world-size+ +world-size+) :initial-element nil))
 
 
-(defun coordinate-key (x y)
-  (array-row-major-index *heightmap* (wrap x) (wrap y)))
-
-(defun coordinate-key-for-entity (e)
-  (coordinate-key (coords/x e) (coords/y e)))
-
+(declaim (ftype (function (fixnum fixnum) list)
+                coords-lookup)
+         (ftype (function (coords) list)
+                coords-insert-entity coords-remove-entity)
+         (ftype (function (coords fixnum fixnum) list)
+                coords-move-entity))
 
 (defun coords-insert-entity (e)
-  (push e (gethash (coordinate-key-for-entity e) *coords-contents*)))
+  (push e (aref *coords-contents* (coords/x e) (coords/y e))))
 
 (defun coords-remove-entity (e)
-  (let ((k (coordinate-key-for-entity e)))
-    (when (null (zap% (gethash k *coords-contents*)
-                      #'delete e %))
-      (remhash k *coords-contents*))))
+  (zap% (aref *coords-contents* (coords/x e) (coords/y e))
+        #'delete e %))
 
 (defun coords-move-entity (e new-x new-y)
   (coords-remove-entity e)
@@ -483,8 +503,12 @@
   (coords-insert-entity e))
 
 (defun coords-lookup (x y)
-  (gethash (coordinate-key x y) *coords-contents*))
+  (aref *coords-contents* (wrap x) (wrap y)))
 
+
+(defmethod initialize-instance :after ((entity coords) &key)
+  (zapf (coords/x entity) #'wrap
+        (coords/y entity) #'wrap))
 
 (defmethod entity-created :after ((entity coords))
   (coords-insert-entity entity))
@@ -851,7 +875,12 @@
       (format nil "[~D, ~D]" *cursor-x* *cursor-y*)
       (format nil "~D creature~:P" *population*)
       (format nil "~D entit~:@P" (hash-table-count *entity-index*))
-      (format nil "tick ~D" *tick*))
+      (format nil "tick ~D" *tick*)
+      (if (equal *timing* (cons 0 0))
+        ""
+        (format nil "~,5Fms per run over ~D runs"
+                (/ (cdr *timing*) internal-time-units-per-second 1/1000)
+                (car *timing*))))
     (1- *screen-width*)
     1))
 
@@ -1028,7 +1057,6 @@
          (state-map-loop)))))
 
 
-
 (defun state-help ()
   (render-help)
   (press-any-key)
@@ -1062,3 +1090,4 @@
 ; (run)
 ; (start-profiling)
 ; (stop-profiling)
+
