@@ -25,6 +25,7 @@
 (defparameter *game-log* nil)
 
 (defparameter *population* 0)
+(defparameter *tick* 0)
 
 
 (deftype world-coordinate ()
@@ -563,6 +564,16 @@
   (funcall (sentient/function entity) entity))
 
 
+;;; Age
+(define-component aging
+  (birthtick :initform *tick*)
+  (age :initform 0))
+
+
+(define-system age ((entity aging))
+  (incf (aging/age entity)))
+
+
 ;;;; Entities ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Flora
 (define-entity tree (coords visible fruiting flavor))
@@ -576,7 +587,7 @@
                  :coords/y y
                  :visible/glyph "T"
                  :visible/color +color-green+
-                 :fruiting/chance 0.0001
+                 :fruiting/chance 0.0005
                  :flavor/text '("A tree sways gently in the wind.")))
 
 (defun make-fruit (x y)
@@ -634,8 +645,8 @@
 
 
 ;;; Fauna
-(define-entity creature (coords visible sentient flavor metabolizing)
-  (name :initform (random-name) :accessor creature-name))
+(define-entity creature (coords visible sentient flavor metabolizing aging)
+  (name :accessor creature-name :initarg :name))
 
 
 (defparameter *directions*
@@ -666,6 +677,7 @@
       (coords-move-entity c (+ x dx) (+ y dy)))))
 
 (defun creature-eat (c food)
+  (incf (metabolizing/energy c) (edible/energy food))
   (destroy-entity food))
 
 (defun creature-act (c)
@@ -677,20 +689,25 @@
 
 
 (defun make-creature (x y)
-  (create-entity 'creature
-                 :coords/x x
-                 :coords/y y
-                 :visible/color +color-white+
-                 :visible/glyph "@"
-                 :metabolizing/energy 1000
-                 :metabolizing/insulation 1
-                 :sentient/function 'creature-act
-                 :flavor/text '("A creature is here."
-                                "It likes food.")))
+  (let ((name (random-name)))
+    (create-entity 'creature
+                   :name name
+                   :coords/x x
+                   :coords/y y
+                   :visible/color +color-white+
+                   :visible/glyph "@"
+                   :metabolizing/energy 1000
+                   :metabolizing/insulation 1
+                   :sentient/function 'creature-act
+                   :flavor/text
+                   (list (format nil "A creature named ~:(~A~) is here." name)
+                         "It likes food."))))
 
 
 (defmethod starve :after ((c creature))
-  (log-message "~A has starved!" (creature-name c)))
+  (log-message "~A has starved.  It was ~D tick~:P old."
+               (creature-name c)
+               (aging/age c)))
 
 
 (defmethod entity-created :after ((e creature))
@@ -847,7 +864,8 @@
       (format nil "[~D, ~D]" *view-x* *view-y*)
       (format nil "[~D, ~D]" *cursor-x* *cursor-y*)
       (format nil "~D creature~:P" *population*)
-      (format nil "~D entit~:@P" (hash-table-count *entity-index*)))
+      (format nil "~D entit~:@P" (hash-table-count *entity-index*))
+      (format nil "tick ~D" *tick*))
     (1- *screen-width*)
     0)
   (write-left
@@ -928,6 +946,8 @@
 
 
 (defun tick-world ()
+  (incf *tick*)
+  (run-system 'age)
   (run-system 'consume-energy)
   (run-system 'grow-fruit)
   (run-system 'rot)
@@ -964,7 +984,8 @@
         *view-y* (wrap (- *screen-center-y*))
         *cursor-x* 0
         *cursor-y* 0
-        *population* 0)
+        *population* 0
+        *tick* 0)
   (generate-trees)
   (generate-algae)
   (generate-mysteries)
