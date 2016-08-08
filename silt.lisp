@@ -17,6 +17,7 @@
 (defparameter *population* 0)
 (defparameter *tick* 0)
 (defparameter *timing* (cons 0 0))
+(defparameter *temperature* 0)
 
 
 (deftype world-coordinate ()
@@ -676,8 +677,19 @@
   (destroy-entity entity))
 
 
+(defgeneric calculate-energy-cost (entity))
+
+(defmethod calculate-energy-cost ((entity metabolizing))
+  (let* ((insulation (metabolizing/insulation entity))
+         (base-cost 1.0)
+         (temperature-cost (max 0 (* 0.1 (- (abs *temperature*) insulation))))
+         (insulation-cost (* 0.05 insulation)))
+    (+ base-cost temperature-cost insulation-cost)))
+
+
 (define-system consume-energy ((entity metabolizing))
-  (when (minusp (decf (metabolizing/energy entity)))
+  (when (minusp (decf (metabolizing/energy entity)
+                      (calculate-energy-cost entity)))
     (starve entity)))
 
 
@@ -828,16 +840,21 @@
     (creature-mutate-color c)
     (creature-mutate-glyph c)))
 
+(defun creature-mutate-insulation (c)
+  (setf (metabolizing/insulation c)
+        (max 0 (random-around (metabolizing/insulation c) 2))))
+
 (defun creature-mutate (c)
   (let ((v (random 1.0)))
     (cond
-      ((< v 0.90) (creature-mutate-directions c))
+      ((< v 0.40) (creature-mutate-directions c))
+      ((< v 0.90) (creature-mutate-insulation c))
       ((< v 0.99) (creature-mutate-color c))
       ((< v 1.00) (creature-mutate-glyph c)))))
 
 
 (defun creature-should-reproduce-p (c)
-  (and (> (metabolizing/energy c) 1000)
+  (and (> (metabolizing/energy c) 2000)
        (< (random 1.0) 0.01)))
 
 (defun creature-should-mutate-p ()
@@ -880,7 +897,7 @@
                       (directions *default-creature-directions*)
                       (color +color-white-black+)
                       (glyph "@")
-                      (energy 2000))
+                      (energy 3000))
   (let ((name (random-name)))
     (create-entity
       'creature
@@ -891,7 +908,7 @@
       :visible/color color
       :visible/glyph glyph
       :metabolizing/energy energy
-      :metabolizing/insulation 1
+      :metabolizing/insulation 0
       :sentient/function 'creature-act
       :inspectable/slots '(name directions metabolizing/energy aging/birthtick aging/age)
       :flavor/text (list (format nil "A creature named ~:(~A~) is here." name)
@@ -1113,6 +1130,7 @@
       (format nil "[~D, ~D]" *cursor-x* *cursor-y*)
       (format nil "~D creature~:P" *population*)
       (format nil "~D entit~:@P" (hash-table-count *entity-index*))
+      (format nil "~D°" *temperature*)
       (format nil "tick ~D" *tick*)
       (if (equal *timing* (cons 0 0))
         ""
@@ -1199,6 +1217,9 @@
       ((#\Space) (zapf *paused* #'not))
       ((#\`) (when *paused* (tick-world)))
 
+      ((#\+) (incf *temperature*))
+      ((#\-) (decf *temperature*))
+
       ((#\h) (move-view  -5   0))
       ((#\j) (move-view   0   5))
       ((#\k) (move-view   0  -5))
@@ -1266,6 +1287,7 @@
         *cursor-y* 0
         *population* 0
         *tick* 0
+        *temperature* 0
         *paused* nil))
 
 (defun generate-world ()
