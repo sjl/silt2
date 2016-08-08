@@ -1,4 +1,4 @@
-.PHONY: deploy
+.PHONY: deploy update-deps
 
 lisps := $(shell ffind '\.(asd|lisp|ros)$$')
 
@@ -8,7 +8,10 @@ vendor/quickutils.lisp: make-quickutils.lisp
 build/silt: $(lisps)
 	ros build build/silt.ros
 
-/opt/silt/silt: build/silt
+update-deps:
+	hg -R /home/sjl/cl-losh pull -u
+
+/opt/silt/silt: update-deps build/silt
 	rm /opt/silt/silt
 	cp build/silt /opt/silt/silt
 
