@@ -193,8 +193,19 @@
               (write-string-at (left-pad string padding) tx ty))))))
 
 
+(defun take (n list)
+  (iterate (repeat n)
+           (for item :in list)
+           (collect item)))
+
+
+(defun log-height ()
+  (max 5 (floor *screen-height* 4)))
+
+
 (defun log-message (s &rest args)
-  (ticklist-push *game-log* (apply #'format nil s args) 200))
+  (ticklist-push *game-log* (apply #'format nil s args) 200)
+  (setf *game-log* (take (log-height) *game-log*)))
 
 
 (defclause-sequence ACROSS-FLAT-ARRAY INDEX-OF-FLAT-ARRAY
@@ -1283,7 +1294,7 @@
            (tick-world)
            (tick-log))
          (render-map)
-         (sleep 0.01)
+         (sleep 0.02)
          (state-map-loop)))))
 
 
