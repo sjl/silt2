@@ -92,6 +92,26 @@
   (mapcar #'cdr ticklist))
 
 
+;;;; Weightlists ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defstruct (weightlist (:constructor %make-weightlist))
+  weights sums items total)
+
+(defun make-weightlist (items weights)
+  "Make a weightlist of the given items and weights."
+  (%make-weightlist
+    :items items
+    :weights weights
+    :sums (prefix-sums weights)
+    :total (apply #'+ weights)))
+
+(defun weightlist-random (weightlist)
+  (iterate
+    (with n = (random (weightlist-total weightlist)))
+    (for item :in (weightlist-items weightlist))
+    (for weight :in (weightlist-sums weightlist))
+    (finding item :such-that (< n weight))))
+
+
 ;;;; Utils ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun manage-screen ()
   (multiple-value-bind (w h)
@@ -749,7 +769,8 @@
 ;;; Fauna
 (define-entity creature
     (coords visible sentient flavor metabolizing aging inspectable)
-  (name :accessor creature-name :initarg :name))
+  (name :accessor creature-name :initarg :name)
+  (directions :accessor creature-directions :initarg :directions))
 
 (define-entity corpse
     (coords visible flavor decomposing))
@@ -758,37 +779,77 @@
 (defparameter *directions*
   (iterate dirs (for dx :from -1 :to 1)
            (iterate (for dy :from -1 :to 1)
-                    (in dirs (collect (cons dx dy) :result-type 'vector)))))
+                    (in dirs (collect (cons dx dy))))))
 
+(defparameter *default-creature-directions*
+  (make-weightlist *directions*
+                   (iterate (repeat (length *directions*))
+                            (collect 10))))
+
+(defparameter *creature-colors*
+  (vector +color-white-black+
+          +color-blue-black+
+          +color-cyan-black+
+          +color-yellow-black+
+          +color-green-black+
+          +color-pink-black+))
+
+(defparameter *creature-glyphs*
+  (vector "@" "$" "?" "!" "&" "+"))
+
+
+(defun creature-mutate-glyph (c)
+  (setf (visible/glyph c) (random-elt *creature-glyphs*)))
+
+(defun creature-mutate-color (c)
+  (setf (visible/color c) (random-elt *creature-colors*)))
+
+(defun creature-mutate-directions (c)
+  (let ((old (creature-directions c)))
+    (setf (creature-directions c)
+          (make-weightlist (weightlist-items old)
+                           (mapcar (lambda (w)
+                                     (max 0 (random-around w 2)))
+                                   (weightlist-weights old))))))
+
+(defun creature-mutate-appearance (c)
+  (if (randomp)
+    (creature-mutate-color c)
+    (creature-mutate-glyph c)))
 
 (defun creature-mutate (c)
   (let ((v (random 1.0)))
-    (declare (ignore v))
     (cond
-      (t (setf (visible/glyph c)
-               (random-elt #("@" "$" "?" "!" "&" "+")))))))
+      ((< v 0.90) (creature-mutate-directions c))
+      ((< v 0.99) (creature-mutate-color c))
+      ((< v 1.00) (creature-mutate-glyph c)))))
+
 
 (defun creature-should-reproduce-p (c)
   (and (> (metabolizing/energy c) 1000)
        (< (random 1.0) 0.01)))
 
 (defun creature-should-mutate-p ()
-  (< (random 1.0) 0.01))
+  (< (random 1.0) 0.1))
 
 (defun creature-reproduce (parent)
-  (let ((energy (floor (metabolizing/energy parent) 2))
-        (child (make-creature (coords/x parent) (coords/y parent))))
-    (setf (metabolizing/energy parent) energy
-          (metabolizing/energy child) energy)
+  (let* ((energy (floor (metabolizing/energy parent) 2))
+         (child (make-creature (coords/x parent) (coords/y parent)
+                               :color (visible/color parent)
+                               :glyph (visible/glyph parent)
+                               :energy energy
+                               :directions (creature-directions parent))))
+    (setf (metabolizing/energy parent) energy)
     (when (creature-should-mutate-p)
       (creature-mutate child))
     (log-message "~A begets ~A." (creature-name parent) (creature-name child))))
+
 
 (defun creature-move (c)
   (let ((x (coords/x c))
         (y (coords/y c)))
     (destructuring-bind (dx . dy)
-        (random-elt *directions*)
+        (weightlist-random (creature-directions c))
       (coords-move-entity c (+ x dx) (+ y dy)))))
 
 (defun creature-eat (c food)
@@ -804,28 +865,33 @@
       (t (creature-move c)))))
 
 
-(defun make-creature (x y)
+(defun make-creature (x y &key
+                      (directions *default-creature-directions*)
+                      (color +color-white-black+)
+                      (glyph "@")
+                      (energy 2000))
   (let ((name (random-name)))
     (create-entity
       'creature
       :name name
+      :directions directions
       :coords/x x
       :coords/y y
-      :visible/color +color-white-black+
-      :visible/glyph "@"
-      :metabolizing/energy 2000
+      :visible/color color
+      :visible/glyph glyph
+      :metabolizing/energy energy
       :metabolizing/insulation 1
       :sentient/function 'creature-act
-      :inspectable/slots '(metabolizing/energy aging/birthtick aging/age)
+      :inspectable/slots '(name directions metabolizing/energy aging/birthtick aging/age)
       :flavor/text (list (format nil "A creature named ~:(~A~) is here." name)
                          "It likes food."))))
 
-(defun make-corpse (x y name)
+(defun make-corpse (x y color name)
   (create-entity
     'corpse
     :coords/x x
     :coords/y y
-    :visible/color +color-white-black+
+    :visible/color color
     :visible/glyph "%"
     :decomposing/rate 0.001
     :flavor/text (list (format nil "The corpse of ~:(~A~) lies here." name))))
@@ -837,6 +903,7 @@
                (aging/age c))
   (make-corpse (coords/x c)
                (coords/y c)
+               (visible/color c)
                (creature-name c)))
 
 
@@ -880,7 +947,7 @@
     (iterate
       (for creature :in (remove-if-not #'creature? (nearby f)))
       (unless (member creature (ticklist-contents recent))
-        (creature-mutate creature)
+        (creature-mutate-appearance creature)
         (ticklist-push recent creature 1000)
         (log-message "~A drinks from the fountain and... changes."
                      (creature-name creature))))))
@@ -1081,8 +1148,9 @@
                                      (mapcar (compose #'length #'symbol-name)
                                              slots)))
                 (for slot :in slots)
-                (collect (format nil "~vA ~A"
-                                 width slot (slot-value entity slot)))))
+                (collect (let ((*print-pretty* nil))
+                           (format nil "~vA ~A"
+                                   width slot (slot-value entity slot))))))
             :into text))
 
         (collecting "" :into text))
