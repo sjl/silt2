@@ -703,7 +703,8 @@
 ;;; Flora
 (define-entity tree (coords visible fruiting flavor))
 (define-entity fruit (coords visible edible flavor decomposing inspectable))
-(define-entity algae (coords visible edible))
+(define-entity algae (coords visible edible decomposing))
+(define-entity grass (coords visible edible decomposing))
 
 
 (defun make-tree (x y)
@@ -730,8 +731,18 @@
   (create-entity 'algae
                  :coords/x x
                  :coords/y y
-                 :edible/energy 10
+                 :edible/energy 30
+                 :decomposing/rate 0.003
                  :visible/glyph "`"
+                 :visible/color +color-green-black+))
+
+(defun make-grass (x y)
+  (create-entity 'grass
+                 :coords/x x
+                 :coords/y y
+                 :edible/energy 10
+                 :decomposing/rate 0.001
+                 :visible/glyph "\""
                  :visible/color +color-green-black+))
 
 
@@ -747,12 +758,6 @@
     (:dirt 0.001)
     (t 0)))
 
-(defun algae-probability (x y)
-  (case (terrain-type x y)
-    (:shallow-water 0.01)
-    (:deep-water 0.001)
-    (t 0)))
-
 
 (defun generate-trees ()
   (iterate
@@ -762,13 +767,14 @@
       (when (< (random 1.0) (tree-probability x y))
         (make-tree x y)))))
 
-(defun generate-algae ()
-  (iterate
-    (for x :from 0 :below +world-size+)
-    (iterate
-      (for y :from 0 :below +world-size+)
-      (when (< (random 1.0) (algae-probability x y))
-        (make-algae x y)))))
+
+(defun grow-algae ()
+  (let ((target (random-coordinate :shallow-water)))
+    (when target (make-algae (car target) (cdr target)))))
+
+(defun grow-grass ()
+  (let ((target (random-coordinate :grass)))
+    (when target (make-grass (car target) (cdr target)))))
 
 
 ;;; Fauna
@@ -1226,6 +1232,8 @@
   (run-system 'age)
   (run-system 'consume-energy)
   (run-system 'grow-fruit)
+  (grow-algae)
+  (grow-grass)
   (run-system 'rot)
   (run-system 'rot-food)
   (run-system 'sentient-act))
@@ -1263,7 +1271,6 @@
 (defun generate-world ()
   (setf *heightmap* (diamond-square (allocate-heightmap)))
   (generate-trees)
-  (generate-algae)
   (generate-mysteries))
 
 (defun state-generate ()
