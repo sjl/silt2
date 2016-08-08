@@ -38,24 +38,30 @@
 
 
 ;;;; Colors ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(define-constant +color-white+ 0)
-(define-constant +color-blue+ 1)
-(define-constant +color-yellow+ 2)
-(define-constant +color-cyan+ 3)
-(define-constant +color-snow+ 4)
-(define-constant +color-green+ 5)
-(define-constant +color-pink+ 6)
-(define-constant +color-orange+ 7)
+(defmacro defcolors (&rest colors)
+  `(progn
+    ,@(iterate (for n :from 0)
+               (for (constant nil nil) :in colors)
+               (collect `(define-constant ,constant ,n)))
+    (defun init-colors ()
+      ,@(iterate
+          (for (constant fg bg) :in colors)
+          (collect `(charms/ll:init-pair ,constant ,fg ,bg))))))
 
-(defun init-colors ()
-  (charms/ll:init-pair +color-white+ charms/ll:COLOR_WHITE charms/ll:COLOR_BLACK)
-  (charms/ll:init-pair +color-blue+ charms/ll:COLOR_BLUE charms/ll:COLOR_BLACK)
-  (charms/ll:init-pair +color-yellow+ charms/ll:COLOR_YELLOW charms/ll:COLOR_BLACK)
-  (charms/ll:init-pair +color-cyan+ charms/ll:COLOR_CYAN charms/ll:COLOR_BLACK)
-  (charms/ll:init-pair +color-snow+ charms/ll:COLOR_BLACK charms/ll:COLOR_WHITE)
-  (charms/ll:init-pair +color-green+ charms/ll:COLOR_GREEN charms/ll:COLOR_BLACK)
-  (charms/ll:init-pair +color-pink+ charms/ll:COLOR_MAGENTA charms/ll:COLOR_BLACK)
-  (charms/ll:init-pair +color-orange+ charms/ll:COLOR_BLACK charms/ll:COLOR_YELLOW))
+(defcolors
+  (+color-white-black+  charms/ll:COLOR_WHITE   charms/ll:COLOR_BLACK)
+  (+color-blue-black+   charms/ll:COLOR_BLUE    charms/ll:COLOR_BLACK)
+  (+color-cyan-black+   charms/ll:COLOR_CYAN    charms/ll:COLOR_BLACK)
+  (+color-yellow-black+ charms/ll:COLOR_YELLOW  charms/ll:COLOR_BLACK)
+  (+color-green-black+  charms/ll:COLOR_GREEN   charms/ll:COLOR_BLACK)
+  (+color-pink-black+   charms/ll:COLOR_MAGENTA charms/ll:COLOR_BLACK)
+
+  (+color-black-white+  charms/ll:COLOR_BLACK charms/ll:COLOR_WHITE)
+  (+color-black-yellow+ charms/ll:COLOR_BLACK charms/ll:COLOR_YELLOW)
+
+  (+color-white-blue+ charms/ll:COLOR_WHITE charms/ll:COLOR_BLUE))
+
+
 
 (defmacro with-color (color &body body)
   (once-only (color)
@@ -64,6 +70,26 @@
         (charms/ll:attron (charms/ll:color-pair ,color))
         (progn ,@body))
       (charms/ll:attroff (charms/ll:color-pair ,color)))))
+
+
+;;;; Ticklists ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defun make-ticklist ()
+  nil)
+
+(defmacro ticklist-push (ticklist value lifespan)
+  `(push (cons ,lifespan ,value) ,ticklist))
+
+(defun ticklist-tick (ticklist)
+  (flet ((decrement (entry)
+           (decf (car entry)))
+         (dead (entry)
+           (minusp (car entry))))
+    (->> ticklist
+      (mapc #'decrement)
+      (remove-if #'dead))))
+
+(defun ticklist-contents (ticklist)
+  (mapcar #'cdr ticklist))
 
 
 ;;;; Utils ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -148,7 +174,7 @@
 
 
 (defun log-message (s &rest args)
-  (push (cons 200 (apply #'format nil s args)) *game-log*))
+  (ticklist-push *game-log* (apply #'format nil s args) 200))
 
 
 (defclause-sequence ACROSS-FLAT-ARRAY INDEX-OF-FLAT-ARRAY
@@ -187,14 +213,24 @@
 
 (defun terrain-char (x y)
   (case (terrain-type x y)
-    (:deep-water    (values #\~ +color-blue+))
-    (:shallow-water (values #\~ +color-cyan+))
-    (:sand          (values #\: +color-yellow+))
-    (:grass         (values #\. +color-green+))
-    (:dirt          (values #\. +color-white+))
-    (:hills         (values #\^ +color-white+))
-    (:mountain      (values #\# +color-white+))
-    (:snow          (values #\* +color-snow+))))
+    (:deep-water    (values #\~ +color-blue-black+))
+    (:shallow-water (values #\~ +color-cyan-black+))
+    (:sand          (values #\: +color-yellow-black+))
+    (:grass         (values #\. +color-green-black+))
+    (:dirt          (values #\. +color-white-black+))
+    (:hills         (values #\^ +color-white-black+))
+    (:mountain      (values #\# +color-white-black+))
+    (:snow          (values #\* +color-black-white+))))
+
+
+(defun random-coordinate (&optional terrain-type)
+  (iterate
+    (repeat 10000)
+    (for x = (random +world-size+))
+    (for y = (random +world-size+))
+    (finding (cons x y) :such-that (or (null terrain-type)
+                                       (eql terrain-type (terrain-type x y))))))
+
 
 (defun world-to-screen (wx wy)
   "Convert world-space coordinates to screen-space."
@@ -420,8 +456,12 @@
 
 
 (defmacro define-entity (name components &rest slots)
-  `(defclass ,name (entity ,@components)
-     (,@slots)))
+  `(progn
+    (defclass ,name (entity ,@components)
+      (,@slots))
+    (defun ,(symbolize name '?) (object)
+      (typep object ',name))
+    (find-class ',name)))
 
 
 (defun initialize-component-index (name)
@@ -519,6 +559,21 @@
 
 (defun coords-lookup (x y)
   (aref *coords-contents* (wrap x) (wrap y)))
+
+
+(defun nearby (entity)
+  (remove entity
+          (iterate
+            outer
+            (with r = 1)
+            (with x = (coords/x entity))
+            (with y = (coords/y entity))
+            (for dx :from (- r) :to r)
+            (iterate
+              (for dy :from (- r) :to r)
+              (in outer
+                  (appending (coords-lookup (+ x dx)
+                                            (+ y dy))))))))
 
 
 (defmethod initialize-instance :after ((entity coords) &key)
@@ -628,7 +683,7 @@
                  :coords/x x
                  :coords/y y
                  :visible/glyph "T"
-                 :visible/color +color-green+
+                 :visible/color +color-green-black+
                  :fruiting/chance 0.0005
                  :flavor/text '("A tree sways gently in the wind.")))
 
@@ -637,7 +692,7 @@
                  :coords/x x
                  :coords/y y
                  :visible/glyph "ó"
-                 :visible/color +color-pink+
+                 :visible/color +color-pink-black+
                  :edible/energy (random-around 300 10)
                  :decomposing/rate 0.0005
                  :inspectable/slots '(edible/energy)
@@ -649,7 +704,7 @@
                  :coords/y y
                  :edible/energy 10
                  :visible/glyph "`"
-                 :visible/color +color-green+))
+                 :visible/color +color-green-black+))
 
 
 (define-system grow-fruit ((entity fruiting coords))
@@ -702,20 +757,6 @@
            (iterate (for dy :from -1 :to 1)
                     (in dirs (collect (cons dx dy) :result-type 'vector)))))
 
-(defun nearby (entity)
-  (remove entity
-          (iterate
-            outer
-            (with r = 1)
-            (with x = (coords/x entity))
-            (with y = (coords/y entity))
-            (for dx :from (- r) :to r)
-            (iterate
-              (for dy :from (- r) :to r)
-              (in outer
-                  (appending (coords-lookup (+ x dx)
-                                            (+ y dy))))))))
-
 
 (defun creature-mutate (c)
   (let ((v (random 1.0)))
@@ -766,7 +807,7 @@
       :name name
       :coords/x x
       :coords/y y
-      :visible/color +color-white+
+      :visible/color +color-white-black+
       :visible/glyph "@"
       :metabolizing/energy 2000
       :metabolizing/insulation 1
@@ -780,7 +821,7 @@
     'corpse
     :coords/x x
     :coords/y y
-    :visible/color +color-white+
+    :visible/color +color-white-black+
     :visible/glyph "%"
     :decomposing/rate 0.001
     :flavor/text (list (format nil "The corpse of ~:(~A~) lies here." name))))
@@ -808,6 +849,9 @@
 (define-entity monolith (coords visible sentient flavor)
   (countdown :initarg :countdown :accessor monolith-countdown))
 
+(define-entity fountain (coords visible sentient flavor inspectable)
+  (recent :initform (make-ticklist) :accessor fountain-recent))
+
 
 (defun monolith-act (m)
   (when (zerop *population*)
@@ -821,20 +865,44 @@
                "The monolith flashes brightly and ~A appears in front of it!"
                <>)))))))
 
+
+(defun fountain-act (f)
+  (zapf (fountain-recent f) #'ticklist-tick)
+  (iterate
+    (for creature :in (remove-if-not #'creature? (nearby f)))
+    (unless (member creature (ticklist-contents (fountain-recent f)))
+      (creature-mutate creature)
+      (ticklist-push (fountain-recent f) creature 1000)
+      (log-message "~A drinks from the fountain and... changes."
+                   (creature-name creature)))))
+
+
 (defun make-monolith ()
   (create-entity 'monolith
                  :countdown 50
                  :coords/x 0
                  :coords/y 0
                  :visible/glyph " "
-                 :visible/color +color-orange+
+                 :visible/color +color-black-yellow+
                  :sentient/function 'monolith-act
                  :flavor/text
                  '("A sleek, rectangular, octarine monolith stands here."
                    "Who placed it?")))
 
+(defun make-fountain ()
+  (create-entity 'fountain
+                 :coords/x 0
+                 :coords/y 10
+                 :visible/glyph "ƒ"
+                 :visible/color +color-white-blue+
+                 :sentient/function 'fountain-act
+                 :inspectable/slots '(fountain-recent)
+                 :flavor/text
+                 '("A marble fountain burbles peacefully here.")))
+
 
 (defun generate-mysteries ()
+  (make-fountain)
   (make-monolith))
 
 
@@ -956,10 +1024,8 @@
                  (- *screen-height* 3))))
 
 (defun draw-log ()
-  (let ((messages *game-log*))
-    (write-left (nreverse (mapcar #'cdr messages))
-                0
-                (- *screen-height* (length messages)))))
+  (let ((messages (nreverse (ticklist-contents *game-log*))))
+    (write-left messages 0 (- *screen-height* (length messages)))))
 
 
 (defun indent (lines)
@@ -1060,10 +1126,7 @@
            (decf (car message)))
          (dead (message)
            (zerop (car message))))
-    (setf *game-log*
-          (->> *game-log*
-            (mapc #'decrement)
-            (remove-if #'dead)))))
+    (setf *game-log* (ticklist-tick *game-log*))))
 
 
 (defun state-title ()
