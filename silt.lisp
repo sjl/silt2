@@ -851,15 +851,39 @@
 
 ;;; Mysteries
 (define-entity monolith (coords visible sentient flavor)
-  (countdown :initarg :countdown :accessor monolith-countdown))
+  (countdown :initarg :countdown))
 
 (define-entity fountain (coords visible sentient flavor inspectable)
-  (recent :initform (make-ticklist) :accessor fountain-recent))
+  (recent :initform (make-ticklist)))
 
 (define-entity colossus (coords visible sentient flavor inspectable)
-  (counter :initform 1 :accessor colossus-counter)
-  (next :initform 1000 :accessor colossus-next))
+  (counter :initform 1)
+  (next :initform 1000))
 
+
+(defun monolith-act (m)
+  (when (zerop *population*)
+    (with-slots (countdown) m
+        (case (decf countdown)
+          (40 (log-message "The monolith begins to glow."))
+          (0 (progn
+               (setf countdown 100)
+               (-<> (make-creature (coords/x m) (1+ (coords/y m)))
+                 creature-name
+                 (log-message
+                   "The monolith flashes brightly and ~A appears in front of it!"
+                   <>))))))))
+
+(defun fountain-act (f)
+  (with-slots (recent) f
+    (zapf recent #'ticklist-tick)
+    (iterate
+      (for creature :in (remove-if-not #'creature? (nearby f)))
+      (unless (member creature (ticklist-contents recent))
+        (creature-mutate creature)
+        (ticklist-push recent creature 1000)
+        (log-message "~A drinks from the fountain and... changes."
+                     (creature-name creature))))))
 
 (defun colossus-act (c)
   (with-slots (counter next) c
@@ -869,28 +893,6 @@
       (setf next (random-range 1000 4000))
       (coords-move-entity c (1+ (coords/x c)) (coords/y c))
       (log-message "The colossus takes a step."))))
-
-(defun monolith-act (m)
-  (when (zerop *population*)
-    (case (decf (monolith-countdown m))
-      (40 (log-message "The monolith begins to glow."))
-      (0 (progn
-           (setf (monolith-countdown m) 100)
-           (-<> (make-creature (coords/x m) (1+ (coords/y m)))
-             creature-name
-             (log-message
-               "The monolith flashes brightly and ~A appears in front of it!"
-               <>)))))))
-
-(defun fountain-act (f)
-  (zapf (fountain-recent f) #'ticklist-tick)
-  (iterate
-    (for creature :in (remove-if-not #'creature? (nearby f)))
-    (unless (member creature (ticklist-contents (fountain-recent f)))
-      (creature-mutate creature)
-      (ticklist-push (fountain-recent f) creature 1000)
-      (log-message "~A drinks from the fountain and... changes."
-                   (creature-name creature)))))
 
 
 (defun make-monolith ()
