@@ -1058,19 +1058,22 @@
 ;;;; Game State Machine ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defparameter *controls-text*
   '("CONTROLS"
-    "  hjklyubn - move your view"
-    "  HJKLYUBN - move your view faster"
+    "  [hjklyubn] move your view"
+    "  [HJKLYUBN] move your view faster"
     ""
-    "  wasd - move your cursor"
-    "  WASD - move your cursor faster"
+    "      [wasd] move your cursor"
+    "      [WASD] move your cursor faster"
     ""
-    "  space - pause time"
-    "  ` - tick time once while paused"
+    "         [+] increase the temperature of the world"
+    "         [-] decrease the temperature of the world"
     ""
-    "  Q - quit"
-    "  R - regenerate the world"
+    "     [space] pause time"
+    "         [`] tick time once while paused"
     ""
-    "  ? - help"))
+    "         [Q] quit"
+    "         [R] regenerate the world"
+    ""
+    "         [?]  help"))
 
 (defun render-title ()
   (render
@@ -1248,15 +1251,18 @@
       ((#\D) (move-cursor  10   0)))))
 
 
-(defun tick-world ()
-  (incf *tick*)
-  (run-system 'age)
-  (run-system 'consume-energy)
+(defun tick-flora ()
   (run-system 'grow-fruit)
   (grow-algae)
   (grow-grass)
   (run-system 'rot)
-  (run-system 'rot-food)
+  (run-system 'rot-food))
+
+(defun tick-world ()
+  (incf *tick*)
+  (run-system 'age)
+  (run-system 'consume-energy)
+  (tick-flora)
   (run-system 'sentient-act))
 
 (defun tick-log ()
@@ -1293,7 +1299,9 @@
 (defun generate-world ()
   (setf *heightmap* (diamond-square (allocate-heightmap)))
   (generate-trees)
-  (generate-mysteries))
+  (generate-mysteries)
+  (iterate (repeat 1000)
+           (tick-flora)))
 
 (defun state-generate ()
   (manage-screen)
