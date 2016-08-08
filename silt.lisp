@@ -59,9 +59,9 @@
   (+color-black-white+  charms/ll:COLOR_BLACK charms/ll:COLOR_WHITE)
   (+color-black-yellow+ charms/ll:COLOR_BLACK charms/ll:COLOR_YELLOW)
 
-  (+color-white-blue+ charms/ll:COLOR_WHITE charms/ll:COLOR_BLUE))
+  (+color-white-blue+ charms/ll:COLOR_WHITE charms/ll:COLOR_BLUE)
 
-
+  (+color-white-red+  charms/ll:COLOR_WHITE charms/ll:COLOR_RED))
 
 (defmacro with-color (color &body body)
   (once-only (color)
@@ -260,6 +260,9 @@
 (defun reset-timing ()
   (setf *timing* (cons 0 0)))
 
+
+(defmacro modf (place n)
+  `(zap% ,place #'mod % ,n))
 
 
 ;;;; Terrain Generation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -760,6 +763,7 @@
 
 (defun creature-mutate (c)
   (let ((v (random 1.0)))
+    (declare (ignore v))
     (cond
       (t (setf (visible/glyph c)
                (random-elt #("@" "$" "?" "!" "&" "+")))))))
@@ -852,6 +856,19 @@
 (define-entity fountain (coords visible sentient flavor inspectable)
   (recent :initform (make-ticklist) :accessor fountain-recent))
 
+(define-entity colossus (coords visible sentient flavor inspectable)
+  (counter :initform 1 :accessor colossus-counter)
+  (next :initform 1000 :accessor colossus-next))
+
+
+(defun colossus-act (c)
+  (with-slots (counter next) c
+    (incf counter)
+    (modf counter next)
+    (when (zerop counter)
+      (setf next (random-range 1000 4000))
+      (coords-move-entity c (1+ (coords/x c)) (coords/y c))
+      (log-message "The colossus takes a step."))))
 
 (defun monolith-act (m)
   (when (zerop *population*)
@@ -864,7 +881,6 @@
              (log-message
                "The monolith flashes brightly and ~A appears in front of it!"
                <>)))))))
-
 
 (defun fountain-act (f)
   (zapf (fountain-recent f) #'ticklist-tick)
@@ -896,12 +912,24 @@
                  :visible/glyph "ƒ"
                  :visible/color +color-white-blue+
                  :sentient/function 'fountain-act
-                 :inspectable/slots '(fountain-recent)
+                 :inspectable/slots '(recent)
                  :flavor/text
                  '("A marble fountain burbles peacefully here.")))
 
+(defun make-colossus ()
+  (create-entity 'colossus
+                 :coords/x 10
+                 :coords/y 0
+                 :visible/glyph "@"
+                 :visible/color +color-white-red+
+                 :sentient/function 'colossus-act
+                 :inspectable/slots '(counter next)
+                 :flavor/text
+                 '("A massive granite statue of an alien being.")))
+
 
 (defun generate-mysteries ()
+  (make-colossus)
   (make-fountain)
   (make-monolith))
 
@@ -1044,9 +1072,15 @@
 
         (when (typep entity 'inspectable)
           (appending
-            (indent (iterate
-                      (for slot :in (inspectable/slots entity))
-                      (collect (format nil "~A ~A" slot (funcall slot entity)))))
+            (indent
+              (iterate
+                (with slots = (inspectable/slots entity))
+                (with width = (apply #'max
+                                     (mapcar (compose #'length #'symbol-name)
+                                             slots)))
+                (for slot :in slots)
+                (collect (format nil "~vA ~A"
+                                 width slot (slot-value entity slot)))))
             :into text))
 
         (collecting "" :into text))
