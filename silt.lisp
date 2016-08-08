@@ -18,6 +18,7 @@
 (defparameter *tick* 0)
 (defparameter *timing* (cons 0 0))
 (defparameter *temperature* 0)
+(defparameter *frame-skip* 1)
 
 
 (deftype world-coordinate ()
@@ -682,8 +683,8 @@
 (defmethod calculate-energy-cost ((entity metabolizing))
   (let* ((insulation (metabolizing/insulation entity))
          (base-cost 1.0)
-         (temperature-cost (max 0 (* 0.1 (- (abs *temperature*) insulation))))
-         (insulation-cost (* 0.05 insulation)))
+         (temperature-cost (max 0 (* 0.2 (- (abs *temperature*) insulation))))
+         (insulation-cost (* 0.1 insulation)))
     (+ base-cost temperature-cost insulation-cost)))
 
 
@@ -734,7 +735,7 @@
                  :coords/y y
                  :visible/glyph "ó"
                  :visible/color +color-pink-black+
-                 :edible/energy (random-around 300 10)
+                 :edible/energy (random-around 500 10)
                  :decomposing/rate 0.0005
                  :inspectable/slots '(edible/energy)
                  :flavor/text '("A ripe piece of fruit has fallen to the ground.")))
@@ -743,7 +744,7 @@
   (create-entity 'algae
                  :coords/x x
                  :coords/y y
-                 :edible/energy 30
+                 :edible/energy 50
                  :decomposing/rate 0.003
                  :visible/glyph "`"
                  :visible/color +color-green-black+))
@@ -752,7 +753,7 @@
   (create-entity 'grass
                  :coords/x x
                  :coords/y y
-                 :edible/energy 10
+                 :edible/energy 20
                  :decomposing/rate 0.001
                  :visible/glyph "\""
                  :visible/color +color-green-black+))
@@ -781,12 +782,16 @@
 
 
 (defun grow-algae ()
-  (let ((target (random-coordinate :shallow-water)))
-    (when target (make-algae (car target) (cdr target)))))
+  (iterate
+    (repeat (floor (* +world-size+ +world-size+) 100000))
+    (let ((target (random-coordinate :shallow-water)))
+      (when target (make-algae (car target) (cdr target))))))
 
 (defun grow-grass ()
-  (let ((target (random-coordinate :grass)))
-    (when target (make-grass (car target) (cdr target)))))
+  (iterate
+    (repeat (floor (* +world-size+ +world-size+) 100000))
+    (let ((target (random-coordinate :grass)))
+      (when target (make-grass (car target) (cdr target))))))
 
 
 ;;; Fauna
@@ -832,7 +837,7 @@
     (setf (creature-directions c)
           (make-weightlist (weightlist-items old)
                            (mapcar (lambda (w)
-                                     (max 0 (random-around w 2)))
+                                     (max 1 (random-around w 1)))
                                    (weightlist-weights old))))))
 
 (defun creature-mutate-appearance (c)
@@ -842,7 +847,7 @@
 
 (defun creature-mutate-insulation (c)
   (setf (metabolizing/insulation c)
-        (max 0 (random-around (metabolizing/insulation c) 2))))
+        (max 0 (random-around (metabolizing/insulation c) 1))))
 
 (defun creature-mutate (c)
   (let ((v (random 1.0)))
@@ -854,11 +859,11 @@
 
 
 (defun creature-should-reproduce-p (c)
-  (and (> (metabolizing/energy c) 2000)
+  (and (> (metabolizing/energy c) 1000)
        (< (random 1.0) 0.01)))
 
 (defun creature-should-mutate-p ()
-  (< (random 1.0) 0.1))
+  (< (random 1.0) 0.5))
 
 (defun creature-reproduce (parent)
   (let* ((energy (floor (metabolizing/energy parent) 2))
@@ -866,6 +871,7 @@
                                :color (visible/color parent)
                                :glyph (visible/glyph parent)
                                :energy energy
+                               :insulation (metabolizing/insulation parent)
                                :directions (creature-directions parent))))
     (setf (metabolizing/energy parent) energy)
     (when (creature-should-mutate-p)
@@ -897,7 +903,8 @@
                       (directions *default-creature-directions*)
                       (color +color-white-black+)
                       (glyph "@")
-                      (energy 3000))
+                      (energy 3000)
+                      (insulation 0))
   (let ((name (random-name)))
     (create-entity
       'creature
@@ -908,9 +915,11 @@
       :visible/color color
       :visible/glyph glyph
       :metabolizing/energy energy
-      :metabolizing/insulation 0
+      :metabolizing/insulation insulation
       :sentient/function 'creature-act
-      :inspectable/slots '(name directions metabolizing/energy aging/birthtick aging/age)
+      :inspectable/slots '(name directions
+                           metabolizing/energy metabolizing/insulation
+                           aging/birthtick aging/age)
       :flavor/text (list (format nil "A creature named ~:(~A~) is here." name)
                          "It likes food."))))
 
@@ -1139,7 +1148,10 @@
         ""
         (format nil "~,5Fms per run over ~D runs"
                 (/ (cdr *timing*) internal-time-units-per-second 1/1000)
-                (car *timing*))))
+                (car *timing*)))
+      (if (= *frame-skip* 1)
+        ""
+        (format nil "frameskip: ~D" *frame-skip*)))
     (1- *screen-width*)
     1
     :pad t))
@@ -1223,6 +1235,9 @@
       ((#\+) (incf *temperature*))
       ((#\-) (decf *temperature*))
 
+      ((#\]) (incf *frame-skip*))
+      ((#\[) (setf *frame-skip* (clamp 1 100 (1- *frame-skip*))))
+
       ((#\h) (move-view  -5   0))
       ((#\j) (move-view   0   5))
       ((#\k) (move-view   0  -5))
@@ -1289,11 +1304,13 @@
   (clear-entities)
   (setf *view-x* (wrap (- *screen-center-x*))
         *view-y* (wrap (- *screen-center-y*))
+        *game-log* (make-ticklist)
         *cursor-x* 0
         *cursor-y* 0
         *population* 0
         *tick* 0
         *temperature* 0
+        *frame-skip* 1
         *paused* nil))
 
 (defun generate-world ()
@@ -1322,10 +1339,11 @@
     ((:help) (state-help))
     (t (progn
          (unless *paused*
-           (tick-world)
-           (tick-log))
+           (iterate (repeat *frame-skip*)
+                    (tick-world)
+                    (tick-log)))
          (render-map)
-         (sleep 0.02)
+         (sleep 0.05)
          (state-map-loop)))))
 
 
