@@ -193,12 +193,6 @@
               (write-string-at (left-pad string padding) tx ty))))))
 
 
-(defun take (n list)
-  (iterate (repeat n)
-           (for item :in list)
-           (collect item)))
-
-
 (defun log-height ()
   (max 5 (floor *screen-height* 4)))
 
