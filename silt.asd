@@ -11,12 +11,10 @@
                #:cl-charms
                #:cl-arrows
                #:sb-sprof
-               #:losh)
+               #:losh
+               #:beast)
 
   :serial t
-  :components
-  ((:module "vendor"
-    :serial t
-    :components ((:file "quickutils")))
-   (:file "package")
-   (:file "silt")))
+  :components ((:file "quickutils")
+               (:file "package")
+               (:file "silt")))

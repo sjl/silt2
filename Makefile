@@ -2,7 +2,7 @@
 
 lisps := $(shell ffind '\.(asd|lisp|ros)$$')
 
-vendor/quickutils.lisp: make-quickutils.lisp
+quickutils.lisp: make-quickutils.lisp
 	sbcl --noinform --load make-quickutils.lisp  --eval '(quit)'
 
 build/silt: $(lisps)
@@ -10,6 +10,7 @@ build/silt: $(lisps)
 
 update-deps:
 	hg -R /home/sjl/cl-losh pull -u
+	hg -R /home/sjl/beast pull -u
 
 /opt/silt/silt: update-deps build/silt
 	rm /opt/silt/silt

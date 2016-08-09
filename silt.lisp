@@ -388,173 +388,9 @@
                    (collect (random-elt *name-syllables*)))))
 
 
-;;;; Roll-Your-Own-ECS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; Entities are stored in an {id -> entity} hash table.
-;;;
-;;; Entities are also indexed by component in a nested hash table:
-;;;
-;;;     {component-symbol -> {id -> entity}}
-;;;
-;;; Entities are indexed by system too:
-;;;
-;;;     {system-symbol ->
-;;;         ({id -> entity}   ; arg1
-;;;          {id -> entity})  ; arg2
-;;;     }
-;;;
-;;; Systems are stored as:
-;;;
-;;;     {system-symbol -> (cons system-function type-specifier-list)}
-;;;
-;;; TODO: Figure out the distinct problem.
-;;; TODO: Unfuck redefining of systems.
-
-(defvar *entity-id-counter* 0)
-(defvar *entity-index* (make-hash-table))
-(defvar *component-index* (make-hash-table))
-(defvar *system-index* (make-hash-table))
-(defvar *systems* (make-hash-table))
-
-
-(defun get-entity (id)
-  (gethash id *entity-index*))
-
-(defun map-entities (function &optional (type 'entity))
-  (->> *entity-index*
-    hash-table-values
-    (remove-if-not (lambda (entity) (typep entity type)))
-    (mapcar function)))
-
-(defun clear-entities ()
-  (mapc #'destroy-entity (hash-table-values *entity-index*)))
-
-
-(defun index-entity (entity)
-  (setf (gethash (entity-id entity) *entity-index*) entity))
-
-(defun satisfies-system-type-specifier-p (entity specifier)
-  (every (lambda (component) (typep entity component))
-         specifier))
-
-(defun index-entity-systems (entity)
-  (iterate
-    (with id = (entity-id entity))
-    (for (system (function . type-specifiers)) :in-hashtable *systems*)
-    (iterate
-      (for argument-index :in (gethash system *system-index*))
-      (for specifier :in type-specifiers)
-      (when (satisfies-system-type-specifier-p entity specifier)
-        (setf (gethash id argument-index) entity)))))
-
-
-(defclass entity ()
-  ((id :reader entity-id :initform (incf *entity-id-counter*))))
-
-(defmethod print-object ((e entity) stream)
-  (print-unreadable-object (e stream :type t :identity nil)
-    (format stream "~D" (entity-id e))))
-
-(defmethod initialize-instance :after ((e entity) &key)
-  (index-entity e)
-  (index-entity-systems e))
-
-
-(defgeneric entity-created (entity)
-  (:method ((entity entity)) nil))
-
-(defgeneric entity-destroyed (entity)
-  (:method ((entity entity)) nil))
-
-
-(defun create-entity (class &rest initargs)
-  (let ((entity (apply #'make-instance class initargs)))
-    (entity-created entity)
-    entity))
-
-(defun destroy-entity (entity)
-  (let ((id (entity-id entity)))
-    (remhash id *entity-index*)
-    (iterate
-      (for (nil index) :in-hashtable *component-index*)
-      (remhash id index))
-    (iterate
-      (for (nil argument-indexes) :in-hashtable *system-index*)
-      (iterate (for index :in argument-indexes)
-               (remhash id index))))
-  (entity-destroyed entity)
-  nil)
-
-
-(defmacro define-entity (name components &rest slots)
-  `(progn
-    (defclass ,name (entity ,@components)
-      (,@slots))
-    (defun ,(symbolize name '?) (object)
-      (typep object ',name))
-    (find-class ',name)))
-
-
-(defun initialize-component-index (name)
-  (gethash-or-init name *component-index* (make-hash-table)))
-
-(defmacro define-component (name &rest fields)
-  (flet ((clean-field (f)
-           (etypecase f
-             (symbol (list f))
-             (list f))))
-    `(progn
-      (defclass ,name ()
-        ,(iterate
-           (for (field . field-options) :in (mapcar #'clean-field fields))
-           (for field-name = (symbolize name '/ field))
-           (collect `(,field-name
-                      :accessor ,field-name
-                      :initarg ,(intern (symbol-name field-name) "KEYWORD") ; *opens trenchcoat*
-                      ,@field-options))))
-
-      (defun ,(symbolize name '?) (object)
-        (typep object ',name))
-
-      (initialize-component-index ',name)
-
-      (defmethod initialize-instance :after ((o ,name) &key)
-        (setf (gethash (entity-id o)
-                       (gethash ',name *component-index*))
-              o))
-
-      (find-class ',name))))
-
-
-(defmacro define-system (name arglist &body body)
-  `(progn
-    (declaim (ftype (function
-                      (,@(mapcar (lambda (arg)
-                                   `(and entity ,@(cdr arg)))
-                                 arglist))
-                      (values null &optional))
-                    ,name))
-    (defun ,name (,@(mapcar #'car arglist))
-      ,@body
-      nil)
-    (setf (gethash ',name *systems*)
-          (cons #',name ',(mapcar #'cdr arglist))
-          (gethash ',name *system-index*)
-          (list ,@(iterate (repeat (length arglist))
-                           (collect `(make-hash-table)))))
-    ',name))
-
-(defun run-system (system)
-  (destructuring-bind (system-function . type-specifiers)
-      (gethash system *systems*)
-    (declare (ignore type-specifiers))
-    (apply #'map-product system-function
-           (mapcar #'hash-table-values (gethash system *system-index*)))
-    (values)))
-
-
-;;;; Components ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; Aspects ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Coordinates
-(define-component coords
+(define-aspect coords
   (x :type world-coordinate)
   (y :type world-coordinate))
 
@@ -618,27 +454,27 @@
 
 
 ;;; Flavor Text
-(define-component flavor text)
+(define-aspect flavor text)
 
 
 ;;; Inspection
-(define-component inspectable slots)
+(define-aspect inspectable slots)
 
 
 ;;; Visibility
-(define-component visible glyph color)
+(define-aspect visible glyph color)
 
 
 ;;; Food
-(define-component edible
+(define-aspect edible
   energy
   original-energy)
 
-(define-component decomposing
+(define-aspect decomposing
   rate
   (remaining :initform 1.0))
 
-(define-component fruiting
+(define-aspect fruiting
   chance)
 
 
@@ -667,7 +503,7 @@
 
 
 ;;;; Metabolism
-(define-component metabolizing
+(define-aspect metabolizing
   insulation
   energy)
 
@@ -695,7 +531,7 @@
 
 
 ;;; Brains
-(define-component sentient function)
+(define-aspect sentient function)
 
 
 (define-system sentient-act ((entity sentient))
@@ -703,7 +539,7 @@
 
 
 ;;; Age
-(define-component aging
+(define-aspect aging
   (birthtick :initform *tick*)
   (age :initform 0))
 
@@ -1141,7 +977,7 @@
       (format nil "[~D, ~D]" *view-x* *view-y*)
       (format nil "[~D, ~D]" *cursor-x* *cursor-y*)
       (format nil "~D creature~:P" *population*)
-      (format nil "~D entit~:@P" (hash-table-count *entity-index*))
+      (format nil "~D entit~:@P" (hash-table-count beast::*entity-index*))
       (format nil "~D°" *temperature*)
       (format nil "tick ~D" *tick*)
       (if (equal *timing* (cons 0 0))

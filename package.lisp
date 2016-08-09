@@ -4,6 +4,7 @@
     #:iterate
     #:cl-arrows
     #:losh
+    #:beast
     #:silt.quickutils)
   (:export
     #:main))

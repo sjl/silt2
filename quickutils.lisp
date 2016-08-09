@@ -2,7 +2,7 @@
 ;;;; See http://quickutil.org for details.
 
 ;;;; To regenerate:
-;;;; (qtlc:save-utils-as "vendor/quickutils.lisp" :utilities '(:WITH-GENSYMS :ONCE-ONLY :COMPOSE :CURRY :RCURRY :PARSE-BODY :DEFINE-CONSTANT :HASH-TABLE-KEY-EXISTS-P :HASH-TABLE-KEYS :HASH-TABLE-VALUES :MAP-PRODUCT) :ensure-package T :package "SILT.QUICKUTILS")
+;;;; (qtlc:save-utils-as "quickutils.lisp" :utilities '(:WITH-GENSYMS :ONCE-ONLY :COMPOSE :CURRY :RCURRY :PARSE-BODY :DEFINE-CONSTANT :HASH-TABLE-KEY-EXISTS-P :HASH-TABLE-KEYS :HASH-TABLE-VALUES :MAP-PRODUCT) :ensure-package T :package "SILT.QUICKUTILS")
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (unless (find-package "SILT.QUICKUTILS")
@@ -319,4 +319,4 @@ Example:
             parse-body define-constant hash-table-key-exists-p hash-table-keys
             hash-table-values map-product)))
 
-;;;; END OF vendor/quickutils.lisp ;;;;
+;;;; END OF quickutils.lisp ;;;;

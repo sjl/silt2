@@ -1,7 +1,7 @@
 (ql:quickload 'quickutil)
 
 (qtlc:save-utils-as
-  "vendor/quickutils.lisp"
+  "quickutils.lisp"
   :utilities '(
                :with-gensyms
                :once-only
