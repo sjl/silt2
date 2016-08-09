@@ -4,10 +4,13 @@
 exec ros -Q -- $0 "$@"
 |#
 
-(declaim (optimize (debug 0) (safety 1) (speed 3)))
 
 (unless (find-package :silt)
   (ql:quickload '(:silt) :silent t))
+
+(declaim (optimize (debug 0) (safety 1) (speed 3)))
+
+(asdf:load-system 'silt :force t)
 
 (defun main (&rest argv)
   (declare (ignore argv))

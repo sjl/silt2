@@ -1,6 +1,11 @@
 (in-package #:silt)
 (require :sb-sprof)
 
+; (declaim (optimize (speed 3) (debug 0) (safety 0)))
+; (declaim (optimize (speed 3) (debug 0) (safety 1)))
+; (declaim (optimize (speed 1) (debug 1) (safety 1)))
+
+
 ;;;; Data ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-constant +world-exponent+ 9)
 (define-constant +world-size+ (expt 2 +world-exponent+))
@@ -19,6 +24,7 @@
 (defparameter *timing* (cons 0 0))
 (defparameter *temperature* 0)
 (defparameter *frame-skip* 1)
+(defparameter *sleep* t)
 
 
 (deftype world-coordinate ()
@@ -394,7 +400,6 @@
   (x :type world-coordinate)
   (y :type world-coordinate))
 
-
 (deftype coordinate-array ()
   `(simple-array list (,+world-size+ ,+world-size+)))
 
@@ -483,12 +488,12 @@
         (edible/energy e)))
 
 
-(define-system rot ((entity decomposing))
+(define-system (rot :inline t) ((entity decomposing))
   (when (minusp (decf (decomposing/remaining entity)
                       (decomposing/rate entity)))
     (destroy-entity entity)))
 
-(define-system rot-food ((entity decomposing edible))
+(define-system (rot-food :inline t) ((entity decomposing edible))
   (setf (edible/energy entity)
         (lerp 0.0 (edible/original-energy entity)
               (decomposing/remaining entity))))
@@ -891,8 +896,9 @@
   (sb-sprof::reset)
   (sb-sprof::profile-call-counts "SILT")
   (sb-sprof::start-profiling :max-samples 50000
-                             :mode :cpu
-                             :sample-interval 0.005
+                             ; :mode :cpu
+                             :mode :time
+                             :sample-interval 0.01
                              :threads :all))
 
 (defun stop-profiling ()
@@ -1073,6 +1079,7 @@
 
       ((#\]) (incf *frame-skip*))
       ((#\[) (setf *frame-skip* (clamp 1 100 (1- *frame-skip*))))
+      ((#\!) (zapf *sleep* #'not))
 
       ((#\h) (move-view  -5   0))
       ((#\j) (move-view   0   5))
@@ -1103,18 +1110,18 @@
 
 
 (defun tick-flora ()
-  (run-system 'grow-fruit)
+  (run-grow-fruit)
   (grow-algae)
   (grow-grass)
-  (run-system 'rot)
-  (run-system 'rot-food))
+  (run-rot)
+  (run-rot-food))
 
 (defun tick-world ()
   (incf *tick*)
-  (run-system 'age)
-  (run-system 'consume-energy)
+  (run-age)
+  (run-consume-energy)
   (tick-flora)
-  (run-system 'sentient-act))
+  (run-sentient-act))
 
 (defun tick-log ()
   (flet ((decrement (message)
@@ -1179,7 +1186,8 @@
                     (tick-world)
                     (tick-log)))
          (render-map)
-         (sleep 0.05)
+         (when *sleep*
+           (sleep 0.05))
          (state-map-loop)))))
 
 
