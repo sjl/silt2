@@ -853,26 +853,30 @@
                    "Who placed it?")))
 
 (defun make-fountain ()
-  (create-entity 'fountain
-                 :coords/x 0
-                 :coords/y 10
+  (let ((loc (random-coordinate :grass)))
+    (when loc
+      (create-entity 'fountain
+                 :coords/x (car loc)
+                 :coords/y (cdr loc)
                  :visible/glyph "ƒ"
                  :visible/color +color-white-blue+
                  :sentient/function 'fountain-act
                  :inspectable/slots '(recent)
                  :flavor/text
-                 '("A marble fountain burbles peacefully here.")))
+                 '("A marble fountain burbles peacefully here.")))))
 
 (defun make-colossus ()
-  (create-entity 'colossus
-                 :coords/x 10
-                 :coords/y 0
-                 :visible/glyph "@"
-                 :visible/color +color-white-red+
-                 :sentient/function 'colossus-act
-                 :inspectable/slots '(counter next)
-                 :flavor/text
-                 '("A massive granite statue of an alien being.")))
+  (let ((loc (random-coordinate :snow)))
+    (when loc
+      (create-entity 'colossus
+                     :coords/x (car loc)
+                     :coords/y (cdr loc)
+                     :visible/glyph "@"
+                     :visible/color +color-white-red+
+                     :sentient/function 'colossus-act
+                     :inspectable/slots '(counter next)
+                     :flavor/text
+                     '("A massive granite statue of an alien being.")))))
 
 
 (defun generate-mysteries ()
