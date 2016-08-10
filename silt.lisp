@@ -912,9 +912,9 @@
                      :visible/glyph "Y"
                      :visible/color +color-white-green+
                      :periodic/function 'yggdrasil-act
-                     :periodic/next 40
-                     :periodic/min 200
-                     :periodic/max 1000
+                     :periodic/next 600
+                     :periodic/min 1000
+                     :periodic/max 2000
                      :flavor/text
                      '("An immense ash tree."
                        "Its branches touch the stars.")))))
