@@ -465,7 +465,13 @@
 
 
 ;;; Inspection
-(define-aspect inspectable slots)
+(define-aspect inspectable
+  (slots :initform nil))
+
+(defun inspectable-get (entity slot)
+  (etypecase slot
+    (symbol (cons slot (slot-value entity slot)))
+    (function (funcall slot entity))))
 
 
 ;;; Visibility
@@ -776,11 +782,15 @@
       :metabolizing/energy energy
       :metabolizing/insulation insulation
       :sentient/function 'creature-act
-      :inspectable/slots '(name directions
-                           metabolizing/energy metabolizing/insulation
-                           aging/birthtick aging/age)
-      :flavor/text (list (format nil "A creature named ~:(~A~) is here." name)
-                         "It likes food."))))
+      :inspectable/slots
+      (list 'name
+            (lambda (c) (cons 'directions
+                              (weightlist-weights (creature-directions c))))
+            'metabolizing/energy 'metabolizing/insulation
+            'aging/birthtick 'aging/age)
+      :flavor/text
+      (list (format nil "A creature named ~:(~A~) is here." name)
+            "It likes food."))))
 
 (defun make-corpse (x y color name)
   (create-entity
@@ -1083,14 +1093,15 @@
           (appending
             (indent
               (iterate
-                (with slots = (inspectable/slots entity))
+                (with slots = (mapcar (curry #'inspectable-get entity)
+                                      (inspectable/slots entity)))
                 (with width = (apply #'max
-                                     (mapcar (compose #'length #'symbol-name)
+                                     (mapcar (compose #'length #'symbol-name #'car)
                                              slots)))
-                (for slot :in slots)
-                (collect (let ((*print-pretty* nil))
-                           (format nil "~vA ~A"
-                                   width slot (slot-value entity slot))))))
+                (for (label . contents) :in slots)
+                (collect
+                  (let ((*print-pretty* nil))
+                    (format nil "~vA ~A" width label contents)))))
             :into text))
 
         (collecting "" :into text))
