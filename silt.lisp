@@ -601,7 +601,7 @@
 
 
 (define-system grow-fruit ((entity fruiting coords))
-  (when (< (random 1.0) (fruiting/chance entity))
+  (when (randomp (fruiting/chance entity))
     (make-fruit (wrap (random-around (coords/x entity) 2))
                 (wrap (random-around (coords/y entity) 2)))))
 
@@ -618,7 +618,7 @@
     (for x :from 0 :below +world-size+)
     (iterate
       (for y :from 0 :below +world-size+)
-      (when (< (random 1.0) (tree-probability x y))
+      (when (randomp (tree-probability x y))
         (make-tree x y)))))
 
 
@@ -664,7 +664,8 @@
           +color-pink-black+))
 
 (defparameter *creature-glyphs*
-  (vector "@" "$" "?" "!" "&" "+"))
+  (vector "@" "$" "?" "!" "&" "+" "☃" "$" "&" "¥"
+          "£" "¤" "€" "‡" "¶" "µ" "¢" "¬" "¿" "§"))
 
 
 (defun creature-mutate-glyph (c)
@@ -701,10 +702,10 @@
 
 (defun creature-should-reproduce-p (c)
   (and (> (metabolizing/energy c) 1000)
-       (< (random 1.0) 0.01)))
+       (randomp 0.01)))
 
 (defun creature-should-mutate-p ()
-  (< (random 1.0) 0.5))
+  (randomp 0.6))
 
 (defun creature-reproduce (parent)
   (let* ((energy (floor (metabolizing/energy parent) 2))
