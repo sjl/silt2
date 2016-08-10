@@ -10,7 +10,9 @@ exec ros -Q -- $0 "$@"
 
 (declaim (optimize (debug 0) (safety 1) (speed 3)))
 
-(asdf:load-system 'silt :force t)
+(let ((*standard-output* (make-broadcast-stream)) ; shut
+      (*error-output* (make-broadcast-stream))) ; up
+  (asdf:load-system 'silt :force t))
 
 (defun main (&rest argv)
   (declare (ignore argv))
