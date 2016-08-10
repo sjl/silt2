@@ -67,9 +67,11 @@
   (+color-black-white+  charms/ll:COLOR_BLACK charms/ll:COLOR_WHITE)
   (+color-black-yellow+ charms/ll:COLOR_BLACK charms/ll:COLOR_YELLOW)
 
-  (+color-white-blue+ charms/ll:COLOR_WHITE charms/ll:COLOR_BLUE)
+  (+color-white-blue+   charms/ll:COLOR_WHITE charms/ll:COLOR_BLUE)
 
-  (+color-white-red+  charms/ll:COLOR_WHITE charms/ll:COLOR_RED))
+  (+color-white-red+    charms/ll:COLOR_WHITE charms/ll:COLOR_RED)
+
+  (+color-white-green+  charms/ll:COLOR_WHITE charms/ll:COLOR_GREEN))
 
 (defmacro with-color (color &body body)
   (once-only (color)
@@ -537,10 +539,25 @@
 
 ;;; Brains
 (define-aspect sentient function)
+(define-aspect periodic
+  function
+  (counter :initform 1)
+  next
+  min
+  max)
 
 
 (define-system sentient-act ((entity sentient))
   (funcall (sentient/function entity) entity))
+
+(define-system periodic-tick ((entity periodic))
+  (when (zerop (setf (periodic/counter entity)
+                     (mod (1+ (periodic/counter entity))
+                          (periodic/next entity))))
+    (setf (periodic/next entity)
+          (random-range (periodic/min entity)
+                        (periodic/max entity)))
+    (funcall (periodic/function entity) entity)))
 
 
 ;;; Age
@@ -799,12 +816,12 @@
 (define-entity monolith (coords visible sentient flavor)
   (countdown :initarg :countdown))
 
-(define-entity fountain (coords visible sentient flavor inspectable)
+(define-entity fountain (coords visible sentient flavor)
   (recent :initform (make-ticklist)))
 
-(define-entity colossus (coords visible sentient flavor inspectable)
-  (counter :initform 1)
-  (next :initform 1000))
+(define-entity colossus (coords visible periodic flavor))
+(define-entity yggdrasil (coords visible periodic flavor))
+(define-entity yggdrasil-sapling (coords visible flavor))
 
 
 (defun monolith-act (m)
@@ -832,13 +849,19 @@
                      (creature-name creature))))))
 
 (defun colossus-act (c)
-  (with-slots (counter next) c
-    (incf counter)
-    (modf counter next)
-    (when (zerop counter)
-      (setf next (random-range 1000 4000))
-      (coords-move-entity c (1+ (coords/x c)) (coords/y c))
-      (log-message "The colossus takes a step."))))
+  (coords-move-entity c (1+ (coords/x c)) (coords/y c))
+  (log-message "The colossus takes a step."))
+
+(defun yggdrasil-act (ygg)
+  (let* ((x (coords/x ygg))
+         (y (coords/y ygg))
+         (nx (random-gaussian-integer x 10))
+         (ny (random-gaussian-integer y 10)))
+    (unless (or (and (= x nx) (= y ny))
+                (find-if #'yggdrasil-sapling? (coords-lookup nx ny)))
+      (log-message "A leaf falls from the massive ash tree and flutters to the ground.")
+      (log-message "A new tree springs up where it fell!")
+      (make-yggdrasil-sapling nx ny))))
 
 
 (defun make-monolith ()
@@ -862,9 +885,8 @@
                  :visible/glyph "ƒ"
                  :visible/color +color-white-blue+
                  :sentient/function 'fountain-act
-                 :inspectable/slots '(recent)
                  :flavor/text
-                 '("A marble fountain burbles peacefully here.")))))
+                 '("A marble fountain burbles peacefully.")))))
 
 (defun make-colossus ()
   (let ((loc (random-coordinate :snow)))
@@ -874,15 +896,42 @@
                      :coords/y (cdr loc)
                      :visible/glyph "@"
                      :visible/color +color-white-red+
-                     :sentient/function 'colossus-act
-                     :inspectable/slots '(counter next)
+                     :periodic/function 'colossus-act
+                     :periodic/next 1000
+                     :periodic/min 2000
+                     :periodic/max 10000
                      :flavor/text
                      '("A massive granite statue of an alien being.")))))
+
+(defun make-yggdrasil ()
+  (let ((loc (random-coordinate :grass)))
+    (when loc
+      (create-entity 'yggdrasil
+                     :coords/x (car loc)
+                     :coords/y (cdr loc)
+                     :visible/glyph "Y"
+                     :visible/color +color-white-green+
+                     :periodic/function 'yggdrasil-act
+                     :periodic/next 40
+                     :periodic/min 200
+                     :periodic/max 1000
+                     :flavor/text
+                     '("An immense ash tree."
+                       "Its branches touch the stars.")))))
+
+(defun make-yggdrasil-sapling (x y)
+  (create-entity 'yggdrasil-sapling
+                 :coords/x x
+                 :coords/y y
+                 :visible/glyph "y"
+                 :visible/color +color-green-black+
+                 :flavor/text '("An small ash tree bends toward the sun.")))
 
 
 (defun generate-mysteries ()
   (make-colossus)
   (make-fountain)
+  (make-yggdrasil)
   (make-monolith))
 
 
@@ -1126,7 +1175,8 @@
   (run-age)
   (run-consume-energy)
   (tick-flora)
-  (run-sentient-act))
+  (run-sentient-act)
+  (run-periodic-tick))
 
 (defun tick-log ()
   (flet ((decrement (message)
