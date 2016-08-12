@@ -10,7 +10,7 @@
   :depends-on (#:iterate
                #:cl-charms
                #:cl-arrows
-               #:sb-sprof
+               #+sbcl #:sb-sprof
                #:losh
                #:beast)
 

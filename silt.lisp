@@ -1,5 +1,5 @@
 (in-package #:silt)
-(require :sb-sprof)
+#+sbcl (require :sb-sprof)
 
 ; (declaim (optimize (speed 3) (debug 0) (safety 0)))
 ; (declaim (optimize (speed 3) (debug 0) (safety 1)))
@@ -946,6 +946,7 @@
 
 
 ;;;; Profiling ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+#+sbcl
 (defun dump-profile ()
   (with-open-file (*standard-output* "silt.prof"
                                      :direction :output
@@ -956,6 +957,7 @@
     (sb-sprof:report :type :flat
                      :min-percent 0.5)))
 
+#+sbcl
 (defun start-profiling ()
   (sb-sprof::reset)
   (sb-sprof::profile-call-counts "SILT")
@@ -965,6 +967,7 @@
                              :sample-interval 0.01
                              :threads :all))
 
+#+sbcl
 (defun stop-profiling ()
   (sb-sprof::stop-profiling)
   (dump-profile))
