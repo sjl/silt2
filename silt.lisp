@@ -76,9 +76,9 @@
 (defmacro with-color (color &body body)
   (once-only (color)
     `(unwind-protect
-      (prog2
+      (progn
         (charms/ll:attron (charms/ll:color-pair ,color))
-        (progn ,@body))
+        ,@body)
       (charms/ll:attroff (charms/ll:color-pair ,color)))))
 
 
@@ -115,6 +115,7 @@
     :total (apply #'+ weights)))
 
 (defun weightlist-random (weightlist)
+  "Return a random item from the weightlist, taking the weights into account."
   (iterate
     (with n = (random (weightlist-total weightlist)))
     (for item :in (weightlist-items weightlist))
@@ -665,7 +666,7 @@
   (directions :accessor creature-directions :initarg :directions))
 
 (define-entity corpse
-    (coords visible flavor decomposing))
+  (coords visible flavor decomposing))
 
 
 (defparameter *directions*
@@ -1193,11 +1194,7 @@
   (run-periodic-tick))
 
 (defun tick-log ()
-  (flet ((decrement (message)
-           (decf (car message)))
-         (dead (message)
-           (zerop (car message))))
-    (setf *game-log* (ticklist-tick *game-log*))))
+  (setf *game-log* (ticklist-tick *game-log*)))
 
 
 (defun state-title ()
