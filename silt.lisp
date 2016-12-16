@@ -422,8 +422,8 @@
   (push e (aref *coords-contents* (coords/x e) (coords/y e))))
 
 (defun coords-remove-entity (e)
-  (zap% (aref *coords-contents* (coords/x e) (coords/y e))
-        #'delete e %))
+  (zapf (aref *coords-contents* (coords/x e) (coords/y e))
+        (delete e %)))
 
 (defun coords-move-entity (e new-x new-y)
   (coords-remove-entity e)
@@ -451,8 +451,8 @@
 
 
 (defmethod initialize-instance :after ((entity coords) &key)
-  (zapf (coords/x entity) #'wrap
-        (coords/y entity) #'wrap))
+  (zapf (coords/x entity) (wrap %)
+        (coords/y entity) (wrap %)))
 
 (defmethod entity-created :after ((entity coords))
   (coords-insert-entity entity))
@@ -850,7 +850,7 @@
 
 (defun fountain-act (f)
   (with-slots (recent) f
-    (zapf recent #'ticklist-tick)
+    (zapf recent (ticklist-tick %))
     (iterate
       (for creature :in (remove-if-not #'creature? (nearby f)))
       (unless (member creature (ticklist-contents recent))
@@ -1140,7 +1140,7 @@
       ((#\R) (return :regen))
       ((#\?) (return :help))
 
-      ((#\Space) (zapf *paused* #'not))
+      ((#\Space) (zapf *paused* (not %)))
       ((#\`) (when *paused* (tick-world)))
 
       ((#\+) (incf *temperature*))
@@ -1148,7 +1148,7 @@
 
       ((#\]) (incf *frame-skip*))
       ((#\[) (setf *frame-skip* (clamp 1 100 (1- *frame-skip*))))
-      ((#\!) (zapf *sleep* #'not))
+      ((#\!) (zapf *sleep* (not %)))
 
       ((#\h) (move-view  -5   0))
       ((#\j) (move-view   0   5))
@@ -1290,4 +1290,3 @@
 ; (run)
 ; (start-profiling)
 ; (stop-profiling)
-
