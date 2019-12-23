@@ -6,7 +6,8 @@ quickutils.lisp: make-quickutils.lisp
 	sbcl --noinform --load make-quickutils.lisp  --eval '(quit)'
 
 build/silt: $(lisps)
-	ros build build/silt.ros
+	sbcl --disable-debugger --noinform --load 'build/build.lisp' --quit
+	mv silt build/silt
 
 update-deps:
 	hg -R /home/sjl/cl-losh pull -u

@@ -7,7 +7,7 @@
 
 
 ;;;; Data ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(define-constant +world-exponent+ 9)
+(define-constant +world-exponent+ 10)
 (define-constant +world-size+ (expt 2 +world-exponent+))
 (defparameter *screen-width* 1)
 (defparameter *screen-height* 1)
@@ -94,9 +94,9 @@
            (decf (car entry)))
          (dead (entry)
            (minusp (car entry))))
-    (->> ticklist
-      (mapc #'decrement)
-      (remove-if #'dead))))
+    (-<> ticklist
+      (mapc #'decrement <>)
+      (remove-if #'dead <>))))
 
 (defun ticklist-contents (ticklist)
   (mapcar #'cdr ticklist))
@@ -298,7 +298,7 @@
 
 
 (defmacro modf (place n)
-  `(zap% ,place #'mod % ,n))
+  `(zapf ,place (mod % ,n)))
 
 
 ;;;; Terrain Generation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -386,10 +386,10 @@
 
 ;;;; Name Generation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defparameter *name-syllables*
-  (-> "syllables.txt"
-    slurp
+  (-<> "syllables.txt"
+    alexandria:read-file-into-string
     read-from-string
-    (coerce 'vector)))
+    (coerce <> 'vector)))
 
 (defun random-name ()
   (format nil "~:(~{~A~}~)"
@@ -422,8 +422,8 @@
   (push e (aref *coords-contents* (coords/x e) (coords/y e))))
 
 (defun coords-remove-entity (e)
-  (zap% (aref *coords-contents* (coords/x e) (coords/y e))
-        #'delete e %))
+  (zapf (aref *coords-contents* (coords/x e) (coords/y e))
+        (delete e %)))
 
 (defun coords-move-entity (e new-x new-y)
   (coords-remove-entity e)
@@ -451,7 +451,7 @@
 
 
 (defmethod initialize-instance :after ((entity coords) &key)
-  (zapf (coords/x entity) #'wrap
+  (callf (coords/x entity) #'wrap
         (coords/y entity) #'wrap))
 
 (defmethod entity-created :after ((entity coords))
@@ -850,7 +850,7 @@
 
 (defun fountain-act (f)
   (with-slots (recent) f
-    (zapf recent #'ticklist-tick)
+    (callf recent #'ticklist-tick)
     (iterate
       (for creature :in (remove-if-not #'creature? (nearby f)))
       (unless (member creature (ticklist-contents recent))
@@ -1140,7 +1140,7 @@
       ((#\R) (return :regen))
       ((#\?) (return :help))
 
-      ((#\Space) (zapf *paused* #'not))
+      ((#\Space) (callf *paused* #'not))
       ((#\`) (when *paused* (tick-world)))
 
       ((#\+) (incf *temperature*))
@@ -1148,7 +1148,7 @@
 
       ((#\]) (incf *frame-skip*))
       ((#\[) (setf *frame-skip* (clamp 1 100 (1- *frame-skip*))))
-      ((#\!) (zapf *sleep* #'not))
+      ((#\!) (callf *sleep* #'not))
 
       ((#\h) (move-view  -5   0))
       ((#\j) (move-view   0   5))
@@ -1278,9 +1278,9 @@
 
 (defun main ()
   (handler-case
-    (progn
-      (run)
-      (format t "Goodbye.~%"))
+      (progn
+        (run)
+        (format t "Goodbye.~%"))
     (t (e)
      (declare (ignore e))
      (format t "Something went wrong, sorry.~%"))))

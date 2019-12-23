@@ -9,8 +9,8 @@
 
   :depends-on (#:iterate
                #:cl-charms
-               #:cl-arrows
                #+sbcl #:sb-sprof
+               #:alexandria
                #:losh
                #:beast)
 
