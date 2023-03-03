@@ -1,9 +1,3 @@
-(defpackage #:silt
-  (:use
-    #:cl
-    #:iterate
-    #:losh
-    #:beast
-    #:silt.quickutils)
-  (:export
-    #:main))
+(defpackage :silt
+  (:use :cl :iterate :losh :beast)
+  (:export :main))

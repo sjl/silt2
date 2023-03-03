@@ -7,14 +7,13 @@
   :license "MIT/X11"
   :version "0.0.1"
 
-  :depends-on (#:iterate
-               #:cl-charms
-               #+sbcl #:sb-sprof
-               #:alexandria
-               #:losh
-               #:beast)
+  :depends-on (:iterate
+               :cl-charms
+               #+sbcl :sb-sprof
+               :alexandria
+               :losh
+               :beast)
 
   :serial t
-  :components ((:file "quickutils")
-               (:file "package")
+  :components ((:file "package")
                (:file "silt")))

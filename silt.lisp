@@ -1,4 +1,4 @@
-(in-package #:silt)
+(in-package :silt)
 #+sbcl (require :sb-sprof)
 
 ; (declaim (optimize (speed 3) (debug 0) (safety 0)))
@@ -7,8 +7,8 @@
 
 
 ;;;; Data ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(define-constant +world-exponent+ 10)
-(define-constant +world-size+ (expt 2 +world-exponent+))
+(alexandria:define-constant +world-exponent+ 10)
+(alexandria:define-constant +world-size+ (expt 2 +world-exponent+))
 (defparameter *screen-width* 1)
 (defparameter *screen-height* 1)
 (defparameter *screen-center-x* 1)
@@ -50,7 +50,7 @@
   `(progn
     ,@(iterate (for n :from 0)
                (for (constant nil nil) :in colors)
-               (collect `(define-constant ,constant ,n)))
+               (collect `(alexandria:define-constant ,constant ,n)))
     (defun init-colors ()
       ,@(iterate
           (for (constant fg bg) :in colors)
@@ -94,9 +94,9 @@
            (decf (car entry)))
          (dead (entry)
            (minusp (car entry))))
-    (-<> ticklist
-      (mapc #'decrement <>)
-      (remove-if #'dead <>))))
+    (_ ticklist
+      (mapc #'decrement _)
+      (remove-if #'dead _))))
 
 (defun ticklist-contents (ticklist)
   (mapcar #'cdr ticklist))
@@ -386,10 +386,10 @@
 
 ;;;; Name Generation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defparameter *name-syllables*
-  (-<> "syllables.txt"
+  (_ "syllables.txt"
     alexandria:read-file-into-string
     read-from-string
-    (coerce <> 'vector)))
+    (coerce _ 'vector)))
 
 (defun random-name ()
   (format nil "~:(~{~A~}~)"
@@ -842,11 +842,11 @@
           (40 (log-message "The monolith begins to glow."))
           (0 (progn
                (setf countdown 100)
-               (-<> (make-creature (coords/x m) (1+ (coords/y m)))
+               (_ (make-creature (coords/x m) (1+ (coords/y m)))
                  creature-name
                  (log-message
                    "The monolith flashes brightly and ~A appears in front of it!"
-                   <>))))))))
+                   _))))))))
 
 (defun fountain-act (f)
   (with-slots (recent) f
