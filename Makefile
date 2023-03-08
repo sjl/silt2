@@ -1,6 +1,6 @@
 .PHONY: all clean
 
-lisps := $(shell ffind '\.(asd|lisp)$$')
+lisps := $(shell find . '(' -name '*.lisp' -o -name '*.asd' ')')
 
 all: silt
 
